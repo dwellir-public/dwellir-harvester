@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "collector_name": "reth",
+    "collector_version": "0.1.0",
+    "last_collect_attempt_at": "2025-11-11T14:42:06+01:00",
+    "last_collect_status": "success",
+    "last_collect_errors": [],
+    "last_successful_collect_at": "2025-11-11T14:42:06+01:00",
+    "foo": "barz"
+  },
+  "blockchain": {
+    "blockchain_ecosystem": "Ethereum",
+    "blockchain_network_name": "mainnet",
+    "chain_id": 1
+  },
+  "workload": {
+    "client_name": "reth",
+    "client_version": "reth-ethereum-cli Version: 1.7.0",
+    "rpc_url": "http://127.0.0.1:8545"
+  }
+}

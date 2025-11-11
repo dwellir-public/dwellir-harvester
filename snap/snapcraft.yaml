@@ -1,0 +1,37 @@
+name: blockchain-collector
+base: core24
+version: 0.1.0
+summary: Collect blockchain node metadata and expose it over HTTP
+description: |
+  Runs a configurable collector (e.g., reth) and serves the resulting JSON file
+  from $SNAP_COMMON/metadata.json at /metadata. Configure via `snap set`.
+
+grade: devel
+confinement: strict
+
+apps:
+  metadata-daemon:
+    command: bin/python3 -m blockchain_collector.daemon
+    daemon: simple
+    restart-condition: always
+    environment:
+      PATH: "$SNAP/venv/bin:$PATH"
+    plugs: [network, network-bind]
+
+
+parts:
+  app:
+    plugin: python
+    source: .
+    # If you need extra pip deps beyond your package, list them here:
+    python-packages: []
+    # (optional) If your build needs system headers/tools, list them here:
+    build-packages: []
+    # No stage-packages needed; the plugin vendors a self-contained runtime.
+
+
+  hooks:
+    plugin: dump
+    source: snap
+    organize:
+      hooks/configure: hooks/configure

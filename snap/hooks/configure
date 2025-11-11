@@ -1,0 +1,3 @@
+#!/bin/bash
+set -eu
+snapctl restart blockchain-collector.metadata-daemon || true

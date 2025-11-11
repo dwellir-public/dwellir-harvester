@@ -1,0 +1,104 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://example.org/schemas/blockchain_node_facts.schema.json",
+    "title": "Blockchain Node Facts",
+    "type": "object",
+    "$comment": "Canonical schema for collecting facts from a RUNNING blockchain service. All timestamps MUST be RFC 3339 / ISO 8601 with timezone (e.g. 2025-10-23T09:41:00+02:00).",
+    "properties": {
+        "metadata": {
+            "type": "object",
+            "description": "Collector bookkeeping and run status.",
+            "properties": {
+                "collector_name": {
+                    "type": "string",
+                    "description": "Name/ID of the program or playbook that produced this file."
+                },
+                "collector_version": {
+                    "type": "string",
+                    "description": "Semantic version or commit of the collector."
+                },
+                "last_successful_collect_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Last time the full information stack was retrieved successfully (no required fields missing)."
+                },
+                "last_collect_attempt_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Wall-clock time of the most recent attempt (whether successful or not)."
+                },
+                "last_collect_status": {
+                    "type": "string",
+                    "enum": [
+                        "success",
+                        "partial",
+                        "failed"
+                    ],
+                    "description": "Outcome of the most recent attempt."
+                },
+                "last_collect_errors": {
+                    "type": "array",
+                    "description": "List of human-readable error messages for the last attempt (empty on success).",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": [
+                "last_collect_attempt_at",
+                "last_collect_status"
+            ]
+        },
+        "blockchain": {
+            "type": "object",
+            "description": "Chain / network identity.",
+            "properties": {
+                "blockchain_ecosystem": {
+                    "type": "string",
+                    "description": "Blockchain (protocol) name. Example: Ethereum, Polkadot, Cosmos."
+                },
+                "blockchain_network_name": {
+                    "type": "string",
+                    "description": "Network/chain name. Example: mainnet, Sepolia, Kusama."
+                },
+                "chain_id": {
+                    "oneOf": [
+                        {
+                            "type": "integer"
+                        },
+                        {
+                            "type": "string"
+                        }
+                    ],
+                    "description": "Numeric or string chain identifier if applicable (e.g., EVM chainId)."
+                }
+            },
+            "required": [
+                "blockchain_network_name"
+            ]
+        },
+        "workload": {
+            "type": "object",
+            "description": "Running client (node) details and runtime configuration.",
+            "properties": {
+                "client_name": {
+                    "type": "string",
+                    "description": "Blockchain client implementation. E.g., geth, erigon, nethermind, parity, polkadot, gaiad."
+                },
+                "client_version": {
+                    "type": "string",
+                    "description": "Client version string."
+                }
+            },
+            "required": [
+                "client_name"
+            ]
+        }
+    },
+    "required": [
+        "metadata",
+        "blockchain",
+        "workload"
+    ]
+}
+

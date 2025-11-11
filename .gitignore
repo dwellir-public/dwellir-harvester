@@ -1,0 +1,71 @@
+# ---- Python basics ----
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+.env/
+.env.*
+.python-version
+
+# Packaging / build artifacts
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+pytest-debug.log
+
+# Linters / tooling caches
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.dmypy.json
+
+# Local outputs produced by the tool
+out.json
+metadata.json
+
+# ---- Snapcraft / Snap build artifacts ----
+parts/
+stage/
+prime/
+.snapcraft/
+*.snap
+*.assert
+# Multipass/Podman/Incus local state (generated outside repo, but ignore if present)
+multipass/
+.incus/
+.podman/
+
+# Snapcraft execution logs (in repo root if generated)
+snapcraft.log
+snapcraft-*.log
+
+# ---- Editors / IDE ----
+.vscode/
+.idea/
+*.code-workspace
+
+# ---- OS noise ----
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---- Misc ----
+*.swp
+*.swo
+*.bak
+*.tmp
+
