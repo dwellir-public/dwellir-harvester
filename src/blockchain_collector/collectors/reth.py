@@ -1,21 +1,13 @@
 from __future__ import annotations
-import os
-import json
-import subprocess
-from typing import Dict, Optional, List
-from urllib import request
-from ..core import BaseCollector, CollectResult, CollectorPartialError, CollectorFailedError
-import socket
+import os, json, subprocess, socket, shutil
+from typing import Dict, Optional, List, Tuple
 from urllib import request, error as urlerror
+from ..core import BaseCollector, CollectResult, CollectorPartialError, CollectorFailedError
 
 RPC_ENV = "RETH_RPC_URL"
 DEFAULT_RPC = "http://127.0.0.1:8545"
 
-def _jsonrpc(url: str, method: str, params=None, timeout=2.5):
-    """
-    Return (result, errstr). On success errstr is None.
-    On connection errors / timeouts, result is None and errstr is a human-readable reason.
-    """
+def _jsonrpc(url: str, method: str, params=None, timeout=2.5) -> Tuple[Optional[object], Optional[str]]:
     if params is None:
         params = []
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
@@ -29,7 +21,6 @@ def _jsonrpc(url: str, method: str, params=None, timeout=2.5):
     except socket.timeout:
         return None, f"rpc {method} timeout after {timeout}s (url={url})"
     except urlerror.URLError as e:
-        # e.reason may be a str or an exception like ConnectionRefusedError
         reason = getattr(e, "reason", e)
         return None, f"rpc {method} connection error (url={url}): {reason}"
     except Exception as e:
@@ -62,33 +53,41 @@ def _map_network_name(chain_id: Optional[int], net_version: Optional[str]) -> st
             return str(net_version)
     return "unknown"
 
-class RethCollector(BaseCollector):
-    """
-    Collector for the Reth (Rust Ethereum) execution client.
+def _find_reth_bin() -> Optional[str]:
+    p = os.environ.get("RETH_BIN")
+    if p and os.path.isfile(p) and os.access(p, os.X_OK):
+        return p
+    w = shutil.which("reth")
+    if w and os.access(w, os.X_OK):
+        return w
+    for cand in ("/snap/bin/reth", "/usr/bin/reth", "/usr/local/bin/reth"):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
 
-    Decision logic:
-      - SUCCESS  => we have a client_version (RPC or CLI) AND a chain_id AND a known network_name.
-      - PARTIAL  => we have *some* info (e.g., client_version or chain hints) but one or more
-                    critical fields are missing/unknown.
-      - FAILED   => we couldn't get anything meaningful (no RPC, CLI not found, etc).
-    """
+class RethCollector(BaseCollector):
     NAME = "reth"
-    VERSION = "0.1.1"
+    VERSION = "0.1.2"
 
     def collect(self) -> CollectResult:
         messages: List[str] = []
 
-        # 1) Try CLI version (best-effort)
+        # CLI version (best-effort)
         client_version_cli: Optional[str] = None
-        try:
-            proc = subprocess.run(["/snap/bin/reth", "--version"], capture_output=True, text=True, check=True)
-            client_version_cli = (proc.stdout or "").strip().splitlines()[0] or None
-            if not client_version_cli:
-                messages.append("reth --version returned no output")
-        except Exception as e:
-            messages.append(f"Could not run 'reth --version': {e!r}")
+        reth_bin = _find_reth_bin()
+        if reth_bin:
+            try:
+                proc = subprocess.run([reth_bin, "--version"], capture_output=True, text=True, check=True)
+                vline = (proc.stdout or "").strip().splitlines()
+                client_version_cli = vline[0] if vline else None
+                if not client_version_cli:
+                    messages.append("reth --version returned no output")
+            except Exception as e:
+                messages.append(f"{reth_bin} --version failed: {e!r}")
+        else:
+            messages.append("reth binary not found (set RETH_BIN or install reth)")
 
-        # RPC-derived info
+        # RPC info (with detailed error messages)
         rpc_url = os.environ.get(RPC_ENV, DEFAULT_RPC)
 
         client_version_rpc, err_cv = _get_client_version_from_rpc(rpc_url)
@@ -103,10 +102,9 @@ class RethCollector(BaseCollector):
         if net_version is None:
             messages.append(err_net or "RPC net_version unavailable")
 
-
         network_name = _map_network_name(chain_id, net_version)
 
-        # Compose what we have
+        # Compose payload we have so far
         workload: Dict = {
             "client_name": "reth",
             "client_version": client_version_rpc or client_version_cli or "unknown",
@@ -119,26 +117,25 @@ class RethCollector(BaseCollector):
         }
 
         # Decide status
-        have_any_info = any([
-            client_version_rpc, client_version_cli, chain_id is not None, net_version is not None
-        ])
+        have_any_info = any([client_version_rpc, client_version_cli, chain_id is not None, net_version is not None])
         workload_complete = (workload["client_version"] != "unknown")
         blockchain_complete = (chain_id is not None) and (network_name != "unknown")
 
         if not have_any_info:
-            # Nothing useful at all → fail hard
-            raise CollectorFailedError("Unable to retrieve client version or chain/network information from RPC or CLI." + messages)
+            # If truly nothing, you can keep 'failed' OR downgrade to partial-with-minimal.
+            # To keep a hard fail but return a clear message:
+            raise CollectorFailedError("; ".join(messages) or "no RPC or CLI info")
 
         if not (workload_complete and blockchain_complete):
-            # We got some info, but not all critical bits → mark partial
+            # *** KEY CHANGE: attach the partial payload ***
+            partial = CollectResult(blockchain=blockchain, workload=workload)
             if not workload_complete:
                 messages.append("Missing client_version (both RPC and CLI failed).")
             if chain_id is None:
                 messages.append("Missing chain_id.")
             if network_name == "unknown":
                 messages.append("Unable to determine known network name.")
-            # Signal partial (core will set status=partial; note it clears blockchain/workload)
-            raise CollectorPartialError(messages or ["Partial data only."])
+            raise CollectorPartialError(messages or ["Partial data only."], partial=partial)
 
-        # All good → success
+        # Success
         return CollectResult(blockchain=blockchain, workload=workload)
