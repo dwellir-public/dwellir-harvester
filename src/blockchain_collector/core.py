@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
+from typing import Tuple
 
 try:
     import jsonschema  # type: ignore
@@ -16,9 +17,11 @@ class CollectorFailedError(Exception):
     pass
 
 class CollectorPartialError(Exception):
-    def __init__(self, messages: List[str]):
+    def __init__(self, messages: List[str], partial: Optional["CollectResult"]=None):
         self.messages = messages
+        self.partial = partial
         super().__init__("; ".join(messages))
+
 
 @dataclass
 class CollectResult:
@@ -78,16 +81,22 @@ def run_collector(collector_name: str, schema_path: str, validate: bool = True,
     attempt_time = now_iso_tz()
     errors: List[str] = []
     status = "failed"
+    res: Optional[CollectResult] = None
+
     try:
         res = collector.collect()
         status = "success"
     except CollectorPartialError as e:
-        res = CollectResult(blockchain={}, workload={})
+        # keep partial data if provided
+        res = e.partial or CollectResult(blockchain={}, workload={})
         status = "partial"
         errors = e.messages
     except Exception as e:
+        # treat as failed but still emit a structured output
         errors = [repr(e)]
-        raise
+        status = "failed"
+        res = CollectResult(blockchain={}, workload={})
+
     output = {
         "metadata": {
             "collector_name": CollectorCls.NAME,
@@ -96,13 +105,17 @@ def run_collector(collector_name: str, schema_path: str, validate: bool = True,
             "last_collect_status": status,
             "last_collect_errors": errors,
         },
-        "blockchain": res.blockchain if 'res' in locals() else {},
-        "workload": res.workload if 'res' in locals() else {},
+        "blockchain": res.blockchain if res else {},
+        "workload": res.workload if res else {},
     }
     if status == "success":
         output["metadata"]["last_successful_collect_at"] = attempt_time
     if extra_metadata:
         output["metadata"].update(extra_metadata)
-    if validate:
+
+    # Only validate successful outputs (partial/failed may be intentionally incomplete)
+    if validate and status == "success":
         validate_output(output, schema_path)
+
     return output
+

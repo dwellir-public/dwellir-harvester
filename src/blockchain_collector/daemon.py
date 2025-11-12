@@ -111,65 +111,141 @@ def _dump_startup_env():
     except Exception:
         log.exception("Startup env dump failed")
 
-# ---------- collector runner ----------
+def _find_collector_exe() -> str:
+    """Prefer the snap's venv binary; fall back to PATH."""
+    # SNAP/venv/bin/...
+    snap = os.environ.get("SNAP")
+    if snap:
+        candidate = os.path.join(snap, "venv", "bin", "blockchain-collector")
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    # PATH
+    exe = shutil.which("blockchain-collector")
+    return exe or "blockchain-collector"
+
+def _summarize_error(stderr: str) -> str:
+    """
+    Strip Python tracebacks and return a concise reason.
+    Keeps the full text in the logs; HTTP response only gets the summary.
+    """
+    if not stderr:
+        return "collector failed (no stderr)"
+    lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
+    # Try to extract the last exception line
+    for ln in reversed(lines):
+        # e.g. "blockchain_collector.core.CollectorFailedError: message"
+        if ":" in ln and "Traceback" not in ln:
+            return ln
+    # Fallback: first and last line
+    if len(lines) >= 2:
+        return f"{lines[0]} … {lines[-1]}"
+    return lines[-1]
+
+def _read_metadata_status(path: str):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        md = data.get("metadata", {})
+        status = md.get("last_collect_status", "unknown")
+        errors = md.get("last_collect_errors", [])
+        return status, errors
+    except FileNotFoundError:
+        return "missing", ["metadata file not found"]
+    except Exception as e:
+        log.exception("Failed to read/parse metadata.json")
+        return "invalid", [f"invalid metadata: {e}"]
+
+
 def _run_once():
     collector = _snapctl_get("collector.name", "null")
     validate_flag = _snapctl_get("collector.validate", True)
     schema_path = _snapctl_get("collector.schema_path", None)
+    timeout_sec = _snapctl_get("collector.timeout", 60)
 
-    cmd = ["blockchain-collector", "collect", "--collector", collector, "--output", METADATA_PATH]
+    try:
+        timeout_sec = int(timeout_sec)
+    except Exception:
+        log.warning("Invalid collector.timeout=%r, defaulting to 60", timeout_sec)
+        timeout_sec = 60
+
+    exe = _find_collector_exe()
+    cmd = [exe, "collect", "--collector", collector, "--output", METADATA_PATH]
     if not validate_flag:
         cmd.append("--no-validate")
     if schema_path:
         cmd.extend(["--schema", schema_path])
 
     env = os.environ.copy()
+    if env.get("SNAP"):
+        env["PATH"] = os.pathsep.join([os.path.join(env["SNAP"], "venv", "bin"), env.get("PATH", "")])
+
     log.info("Running collector: %r", cmd)
-    log.debug("ENV PATH=%s", env.get("PATH", ""))
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True, env=env)
-        if proc.stdout:
-            log.debug("collector stdout:\n%s", proc.stdout.strip())
-        if proc.stderr:
-            log.debug("collector stderr:\n%s", proc.stderr.strip())
-        if not os.path.isfile(METADATA_PATH):
-            log.warning("Collector succeeded but %s does not exist; creating empty metadata", METADATA_PATH)
-            os.makedirs(os.path.dirname(METADATA_PATH), exist_ok=True)
-            with open(METADATA_PATH, "w", encoding="utf-8") as f:
-                json.dump({"metadata":{"note":"created by daemon fallback"}}, f)
-        return {"ok": True, "cmd": cmd}
-    except subprocess.CalledProcessError as e:
+        # Do NOT use check=True so we can still inspect the produced file
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        log.error("Collector timeout after %ss", timeout_sec)
         os.makedirs(os.path.dirname(METADATA_PATH), exist_ok=True)
-        err = (e.stderr or "").strip() or str(e)
-        out = (e.stdout or "").strip()
-        log.error("Collector FAILED: rc=%s", e.returncode)
-        if out:
-            log.error("collector stdout:\n%s", out)
-        if err:
-            log.error("collector stderr:\n%s", err)
-        fail_payload = {
-            "metadata": {
-                "collector_name": collector,
-                "last_collect_status": "failed",
-                "last_collect_errors": [err],
-            },
-            "blockchain": {},
-            "workload": {},
+        with open(METADATA_PATH, "w", encoding="utf-8") as f:
+            json.dump({
+                "metadata": {
+                    "collector_name": collector,
+                    "last_collect_status": "failed",
+                    "last_collect_errors": [f"timeout after {timeout_sec}s"],
+                },
+                "blockchain": {},
+                "workload": {},
+            }, f)
+        return {"ok": False, "error": f"timeout after {timeout_sec}s", "cmd": cmd}
+
+    # Log outputs for debugging
+    if proc.stdout:
+        log.debug("collector stdout:\n%s", proc.stdout.strip())
+    if proc.stderr:
+        log.debug("collector stderr:\n%s", proc.stderr.strip())
+
+    # Ensure file exists (create minimal one if needed)
+    if not os.path.isfile(METADATA_PATH):
+        os.makedirs(os.path.dirname(METADATA_PATH), exist_ok=True)
+        with open(METADATA_PATH, "w", encoding="utf-8") as f:
+            json.dump({
+                "metadata": {
+                    "collector_name": collector,
+                    "last_collect_status": "failed",
+                    "last_collect_errors": ["collector produced no output file"],
+                },
+                "blockchain": {},
+                "workload": {},
+            }, f)
+
+    # Decide success/partial/failed based on the file’s metadata
+    status, errors = _read_metadata_status(METADATA_PATH)
+
+    if status != "success":
+        # Treat partial/failed/missing/invalid as error
+        brief = errors[0] if errors else f"status={status}"
+        log.warning("Collector not successful (status=%s): %s", status, brief)
+        return {
+            "ok": False,
+            "status": status,
+            "error": brief,
+            "cmd": cmd,
         }
-        try:
-            with open(METADATA_PATH, "w", encoding="utf-8") as f:
-                json.dump(fail_payload, f)
-            log.info("Wrote failure metadata to %s", METADATA_PATH)
-        except Exception:
-            log.exception("Failed to write failure metadata")
-        return {"ok": False, "error": err, "cmd": cmd}
-    except FileNotFoundError as e:
-        log.exception("Executable not found running %r", cmd)
-        return {"ok": False, "error": f"executable missing: {e}", "cmd": cmd}
-    except Exception as e:
-        log.exception("Unexpected error running collector")
-        return {"ok": False, "error": str(e), "cmd": cmd}
+
+    # Also fail if the process had a non-zero exit even though file says success
+    if proc.returncode != 0:
+        log.warning("Collector exit code=%s despite status=success", proc.returncode)
+        return {
+            "ok": False,
+            "status": status,
+            "error": f"exit_code={proc.returncode}",
+            "cmd": cmd,
+        }
+
+    return {"ok": True, "cmd": cmd}
+
+
 
 def _worker():
     interval = _snapctl_get("collector.interval", 300)
