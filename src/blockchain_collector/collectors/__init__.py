@@ -4,6 +4,8 @@ from .example_geth import ExampleGethCollector
 from .reth import RethCollector
 from .reth_op import OpRethCollector
 from .reth_bera import BeraRethCollector
+from .substrate import SubstrateCollector
+from .substrate_ajuna import AjunaCollector
 
 # What this package exports
 __all__ = [
@@ -12,4 +14,6 @@ __all__ = [
     "RethCollector",
     "OpRethCollector",
     "BeraRethCollector",
+    "SubstrateCollector",
+    "AjunaCollector",
 ]
