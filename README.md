@@ -51,14 +51,14 @@ by `--collector my_chain_client`.
 - `reth` — queries a local Reth JSON-RPC and `reth --version` (best-effort).
 - `op-reth` — same logic as `reth`, only `workload.client_name` differs.
 - `bera-reth` — same logic as `reth`, only `workload.client_name` differs.
-- `polkadot` — queries a local Polkadot/Substrate JSON-RPC for `system_version`, `system_chain`, and genesis hash.
-- `ajuna` — same Substrate logic as `polkadot`, but hardcodes `workload.client_name` to `ajuna-node`.
+- `substrate` — generic Substrate collector; queries `system_version`, `system_chain`, `chain_getBlockHash(0)`, and uses `system_name` for client_name when not overridden.
+- `ajuna` — Substrate wrapper that hardcodes `workload.client_name` to `ajuna`.
  
 All Reth variants use the same environment variable for RPC:
 - `RETH_RPC_URL` (default: `http://127.0.0.1:8545`)
  
 All Substrate variants use the same environment variable for RPC:
-- `POLKADOT_RPC_URL` (default: `http://127.0.0.1:9933`)
+- `SUBSTRATE_RPC_URL` (default: `http://127.0.0.1:9933`)
  
 Examples:
  
@@ -72,8 +72,8 @@ blockchain-collector collect --collector op-reth
 # Bera reth
 blockchain-collector collect --collector bera-reth
  
-# Polkadot substrate node
-blockchain-collector collect --collector polkadot
+# Generic substrate node (Polkadot/Kusama/Westend/etc.)
+blockchain-collector collect --collector substrate
 
 # Ajuna substrate node
 blockchain-collector collect --collector ajuna
@@ -110,7 +110,7 @@ These keys are read dynamically by the daemon; no rebuild needed.
 
 | Key                      | Type     | Default | Purpose |
 |--------------------------|----------|---------|---------|
-| `collector.name`         | string   | `null`  | Which collector to run (e.g., `null`, `reth`, `op-reth`, `bera-reth`, `polkadot`, `ajuna`). |
+| `collector.name`         | string   | `null`  | Which collector to run (e.g., `null`, `reth`, `op-reth`, `bera-reth`, `substrate`, `ajuna`). |
 | `collector.validate`     | bool     | `true`  | Validate output JSON against the schema. |
 | `collector.schema_path`  | string   | *(none)*| Path to JSON Schema file inside the snap or on disk. |
 | `collector.interval`     | int sec  | `300`   | Background run interval in seconds (min 5). |

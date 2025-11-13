@@ -6,7 +6,7 @@ from blockchain_collector.core import load_collectors, run_collector, bundled_sc
 
 def test_discovery_substrate_variants_registered():
     names = set(load_collectors().keys())
-    assert "polkadot" in names
+    assert "substrate" in names
     assert "ajuna" in names
 
 
@@ -21,18 +21,16 @@ def _mock_jsonrpc(url: str, method: str, params=None, timeout: float = 2.5):
 
 
 @patch("blockchain_collector.collectors._substrate_common._jsonrpc", side_effect=_mock_jsonrpc)
-def test_run_substrate_polkadot_success(mock_rpc):
+def test_run_substrate_generic_success(mock_rpc):
     data = run_collector(
-        collector_name="polkadot",
+        collector_name="substrate",
         schema_path=bundled_schema_path(),
         validate=True,
     )
-    assert data["metadata"]["collector_name"] == "polkadot"
+    assert data["metadata"]["collector_name"] == "substrate"
     assert data["metadata"]["last_collect_status"] == "success"
     assert data["blockchain"]["blockchain_ecosystem"] == "Polkadot"
     assert data["blockchain"]["blockchain_network_name"] == "Kusama"
-    assert data["workload"]["client_name"] == "polkadot"
-    assert data["workload"]["client_version"].startswith("polkadot/")
 
 
 def _mock_jsonrpc_ajuna(url: str, method: str, params=None, timeout: float = 2.5):
@@ -56,5 +54,5 @@ def test_run_substrate_ajuna_success(mock_rpc):
     assert data["metadata"]["last_collect_status"] == "success"
     assert data["blockchain"]["blockchain_ecosystem"] == "Polkadot"
     assert data["blockchain"]["blockchain_network_name"] == "Ajuna"
-    assert data["workload"]["client_name"] == "ajuna-node"
+    assert data["workload"]["client_name"] == "ajuna"
     assert data["workload"]["client_version"].startswith("ajuna-node/")

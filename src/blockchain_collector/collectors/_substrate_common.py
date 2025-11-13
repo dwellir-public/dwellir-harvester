@@ -43,6 +43,16 @@ def _get_system_version(url: str) -> Tuple[Optional[str], Optional[str]]:
         return None, f"rpc system_version parse error for {res!r}: {e}"
 
 
+def _get_system_name(url: str) -> Tuple[Optional[str], Optional[str]]:
+    res, err = _jsonrpc(url, "system_name")
+    if res is None:
+        return None, err
+    try:
+        return str(res), None
+    except Exception as e:
+        return None, f"rpc system_name parse error for {res!r}: {e}"
+
+
 def _get_system_chain(url: str) -> Tuple[Optional[str], Optional[str]]:
     res, err = _jsonrpc(url, "system_chain")
     if res is None:
@@ -63,7 +73,7 @@ def _get_genesis_hash(url: str) -> Tuple[Optional[str], Optional[str]]:
         return None, f"rpc chain_getBlockHash parse error for {res!r}: {e}"
 
 
-def collect_substrate(client_name: str, rpc_env: str = RPC_ENV, default_rpc: str = DEFAULT_RPC) -> CollectResult:
+def collect_substrate(client_name: Optional[str] = None, rpc_env: str = RPC_ENV, default_rpc: str = DEFAULT_RPC) -> CollectResult:
     messages: List[str] = []
 
     rpc_url = os.environ.get(rpc_env, default_rpc)
@@ -80,6 +90,15 @@ def collect_substrate(client_name: str, rpc_env: str = RPC_ENV, default_rpc: str
     if genesis_hash is None:
         messages.append(err_gen or "RPC chain_getBlockHash(0) unavailable")
 
+    # Derive client_name from system_name only when not provided by wrapper
+    if client_name is None or not str(client_name).strip():
+        sys_name, err_system_name = _get_system_name(rpc_url)
+        if sys_name is None:
+            messages.append(err_system_name or "RPC system_name unavailable")
+            client_name = ""
+        else:
+            client_name = sys_name
+
     workload: Dict = {
         "client_name": client_name,
         "client_version": system_version or "unknown",
@@ -92,8 +111,8 @@ def collect_substrate(client_name: str, rpc_env: str = RPC_ENV, default_rpc: str
     if genesis_hash:
         blockchain["chain_id"] = genesis_hash
 
-    have_any_info = any([system_version, system_chain, genesis_hash])
-    workload_complete = bool(system_version)
+    have_any_info = any([system_version, system_chain, genesis_hash, client_name])
+    workload_complete = bool(system_version) and bool(client_name)
     blockchain_complete = bool(system_chain)
 
     if not have_any_info:
@@ -101,8 +120,10 @@ def collect_substrate(client_name: str, rpc_env: str = RPC_ENV, default_rpc: str
 
     if not (workload_complete and blockchain_complete):
         partial = CollectResult(blockchain=blockchain, workload=workload)
-        if not workload_complete:
+        if not bool(system_version):
             messages.append("Missing client_version (RPC system_version failed).")
+        if not bool(client_name):
+            messages.append("Missing client_name (RPC system_name failed and no override provided).")
         if not blockchain_complete:
             messages.append("Missing blockchain_network_name (RPC system_chain failed).")
         raise CollectorPartialError(messages or ["Partial data only."], partial=partial)
