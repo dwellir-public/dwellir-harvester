@@ -51,22 +51,30 @@ by `--collector my_chain_client`.
 - `reth` — queries a local Reth JSON-RPC and `reth --version` (best-effort).
 - `op-reth` — same logic as `reth`, only `workload.client_name` differs.
 - `bera-reth` — same logic as `reth`, only `workload.client_name` differs.
-
+- `polkadot` — queries a local Polkadot/Substrate JSON-RPC for `system_version`, `system_chain`, and genesis hash.
+ 
 All Reth variants use the same environment variable for RPC:
 - `RETH_RPC_URL` (default: `http://127.0.0.1:8545`)
-
+ 
+Polkadot collector uses:
+- `POLKADOT_RPC_URL` (default: `http://127.0.0.1:9933`)
+ 
 Examples:
-
+ 
 ```bash
 # default reth
 blockchain-collector collect --collector reth
-
+ 
 # Optimism reth
 blockchain-collector collect --collector op-reth
-
+ 
 # Bera reth
 blockchain-collector collect --collector bera-reth
+ 
+# Polkadot substrate node
+blockchain-collector collect --collector polkadot
 ```
+
 
 ## Validation
 
@@ -98,7 +106,7 @@ These keys are read dynamically by the daemon; no rebuild needed.
 
 | Key                      | Type     | Default | Purpose |
 |--------------------------|----------|---------|---------|
-| `collector.name`         | string   | `null`  | Which collector to run (e.g., `null`, `reth`, `op-reth`, `bera-reth`). |
+| `collector.name`         | string   | `null`  | Which collector to run (e.g., `null`, `reth`, `op-reth`, `bera-reth`, `polkadot`). |
 | `collector.validate`     | bool     | `true`  | Validate output JSON against the schema. |
 | `collector.schema_path`  | string   | *(none)*| Path to JSON Schema file inside the snap or on disk. |
 | `collector.interval`     | int sec  | `300`   | Background run interval in seconds (min 5). |

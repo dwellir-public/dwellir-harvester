@@ -4,6 +4,7 @@ from .example_geth import ExampleGethCollector
 from .reth import RethCollector
 from .reth_op import OpRethCollector
 from .reth_bera import BeraRethCollector
+from .polkadot import PolkadotCollector
 
 # What this package exports
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "RethCollector",
     "OpRethCollector",
     "BeraRethCollector",
+    "PolkadotCollector",
 ]
