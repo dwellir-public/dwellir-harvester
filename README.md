@@ -49,6 +49,24 @@ by `--collector my_chain_client`.
 
 - `null` — static, schema-valid placeholder; **default** and requires no node.
 - `reth` — queries a local Reth JSON-RPC and `reth --version` (best-effort).
+- `op-reth` — same logic as `reth`, only `workload.client_name` differs.
+- `bera-reth` — same logic as `reth`, only `workload.client_name` differs.
+
+All Reth variants use the same environment variable for RPC:
+- `RETH_RPC_URL` (default: `http://127.0.0.1:8545`)
+
+Examples:
+
+```bash
+# default reth
+blockchain-collector collect --collector reth
+
+# Optimism reth
+blockchain-collector collect --collector op-reth
+
+# Bera reth
+blockchain-collector collect --collector bera-reth
+```
 
 ## Validation
 
@@ -80,7 +98,7 @@ These keys are read dynamically by the daemon; no rebuild needed.
 
 | Key                      | Type     | Default | Purpose |
 |--------------------------|----------|---------|---------|
-| `collector.name`         | string   | `null`  | Which collector to run (e.g., `null`, `reth`). |
+| `collector.name`         | string   | `null`  | Which collector to run (e.g., `null`, `reth`, `op-reth`, `bera-reth`). |
 | `collector.validate`     | bool     | `true`  | Validate output JSON against the schema. |
 | `collector.schema_path`  | string   | *(none)*| Path to JSON Schema file inside the snap or on disk. |
 | `collector.interval`     | int sec  | `300`   | Background run interval in seconds (min 5). |
@@ -186,6 +204,14 @@ curl -s http://127.0.0.1:18080/env | jq .
 > If you changed the port via `service.port`, replace `18080` in the examples.
 
 ---
+
+## Testing
+
+```bash
+python -m pip install -e .
+pip install pytest
+pytest -q
+```
 
 ## Build & publish (Python package)
 
