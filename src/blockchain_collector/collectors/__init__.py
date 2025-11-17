@@ -16,4 +16,5 @@ __all__ = [
     "BeraRethCollector",
     "SubstrateCollector",
     "AjunaCollector",
+    "DummychainCollector",
 ]

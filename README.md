@@ -7,7 +7,7 @@ An extensible Python tool to collect metadata from **local blockchain nodes** an
 ## Quick start (local dev)
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install -e .
 
 # Run with the safe default "null" collector (no local node required)
@@ -53,6 +53,7 @@ by `--collector my_chain_client`.
 - `bera-reth` — same logic as `reth`, only `workload.client_name` differs.
 - `substrate` — generic Substrate collector; queries `system_version`, `system_chain`, `chain_getBlockHash(0)`, and uses `system_name` for client_name when not overridden.
 - `ajuna` — Substrate wrapper that hardcodes `workload.client_name` to `ajuna`.
+- `dummychain` — Dummychain testing chain.
  
 All Reth variants use the same environment variable for RPC:
 - `RETH_RPC_URL` (default: `http://127.0.0.1:8545`)
