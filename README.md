@@ -53,6 +53,7 @@ by `--collector my_chain_client`.
 - `bera-reth` — same logic as `reth`, only `workload.client_name` differs.
 - `substrate` — generic Substrate collector; queries `system_version`, `system_chain`, `chain_getBlockHash(0)`, and uses `system_name` for client_name when not overridden.
 - `ajuna` — Substrate wrapper that hardcodes `workload.client_name` to `ajuna`.
+- `aptos` — Aptos REST-based collector; probes the REST root or `/v1` for headers/body and infers `chain_id`, `client_version`, and network.
 - `dummychain` — Dummychain testing chain.
  
 All Reth variants use the same environment variable for RPC:
@@ -60,6 +61,9 @@ All Reth variants use the same environment variable for RPC:
  
 All Substrate variants use the same environment variable for RPC:
 - `SUBSTRATE_RPC_URL` (default: `http://127.0.0.1:9933`)
+ 
+Aptos collector configuration:
+- `APTOS_RPC_URL` (default: `http://127.0.0.1:8080`) — REST base (root or `/v1` both work)
  
 Examples:
  
@@ -78,6 +82,9 @@ blockchain-collector collect --collector substrate
 
 # Ajuna substrate node
 blockchain-collector collect --collector ajuna
+
+# Aptos mainnet
+blockchain-collector collect --collector aptos
 ```
 
 
