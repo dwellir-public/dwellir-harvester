@@ -9,14 +9,32 @@ description: |
 grade: devel
 confinement: strict
 
+# This connects the dummychain snap to the blockchain-collector snap  
+plugs:
+  dummychain-bins:
+    interface: content
+    content: executables
+    target: $SNAP/usr/local
+
+
+# Our apps that uses snaps needs
+# plugs to be  able to call the binaries.
+# This is a security feature of snaps.
+# The blockchain-collector hence needs plugs for snaps collectors.
 apps:
+  blockchain-collector:
+    command: bin/python3 -m blockchain_collector.cli
+    environment:
+      PATH: "$SNAP/venv/bin:$PATH"
+    plugs: [network, dummychain-bins]
+
   metadata-daemon:
     command: bin/python3 -m blockchain_collector.daemon
     daemon: simple
     restart-condition: always
     environment:
       PATH: "$SNAP/venv/bin:$PATH"
-    plugs: [network, network-bind]
+    plugs: [network, network-bind, dummychain-bins]
 
 
 parts:
