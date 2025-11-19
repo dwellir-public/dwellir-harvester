@@ -64,6 +64,11 @@ All Substrate variants use the same environment variable for RPC:
 Examples:
  
 ```bash
+# Dummychain (snap) - connects via snap plugs
+sudo snap dummychain --edge
+sudo snap connect blockchain-collector:dummychain-bins dummychain:bins
+blockchain-collector collect --collector dummychain
+
 # default reth
 blockchain-collector collect --collector reth
  
