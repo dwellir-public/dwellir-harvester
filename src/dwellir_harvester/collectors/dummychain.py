@@ -81,7 +81,10 @@ class DummychainCollector(BaseCollector):
         try:
             # Get the SNAP environment variable (set by snapd)
             snap_path = os.environ.get('SNAP', '')
-            binary_path = os.path.join(snap_path, 'usr', 'local', 'bin', 'dummychain')
+            if snap_path:
+                binary_path = os.path.join(snap_path, 'usr', 'local', 'bin', 'dummychain')
+            else:
+                binary_path = shutil.which("dummychain")
             # Use the full path to the binary
             proc = subprocess.run([binary_path, "--version"], capture_output=True, text=True, check=True)
             vline = (proc.stdout or "").strip().splitlines()

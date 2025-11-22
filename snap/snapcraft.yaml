@@ -54,6 +54,7 @@ apps:
       - dummychain-bins
       - polkadot-bins
       - reth-bins
+      - home
 
 
 parts:
