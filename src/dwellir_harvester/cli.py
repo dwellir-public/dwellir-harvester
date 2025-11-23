@@ -1,46 +1,102 @@
-
 import argparse
 import json
-from .core import run_collector, bundled_schema_path
+import sys
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+
+try:
+    from .core import collect_all, bundled_schema_path, load_collectors, run_collector
+except ImportError:
+    from core import collect_all, bundled_schema_path, load_collectors, run_collector
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="dwellir-harvester", description="Collect node metadata into a JSON file.")
-    sub = p.add_subparsers(dest="cmd", required=True)
-    c = sub.add_parser("collect", help="Run a collector and emit JSON output.")
-    c.add_argument("--schema", required=False, help="Path to JSON Schema file (defaults to bundled).")
-    c.add_argument("--collector", required=True, help="Collector name (e.g., reth).")
-    c.add_argument("--output", required=False, help="Output JSON path (default: stdout).")
-    c.add_argument("--no-validate", action="store_true", help="Skip JSON Schema validation.")
-    c.add_argument("--meta", action="append", default=[], help="Extra metadata k=v (can repeat).")
-    return p
+    """Build the command line argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="dwellir-harvester",
+        description="Collect blockchain node metadata into a JSON file."
+    )
+    
+    # Create subparsers for different commands
+    subparsers = parser.add_subparsers(dest="cmd", required=True)
+    
+    # 'collect' command
+    collect_parser = subparsers.add_parser(
+        "collect",
+        help="Run one or more collectors and output the results."
+    )
+    collect_parser.add_argument(
+        "collectors",
+        nargs="+",
+        help="One or more collector names to run (e.g., dummychain system)."
+    )
+    collect_parser.add_argument(
+        "--schema",
+        help="Path to JSON Schema file (defaults to bundled schema).",
+        default=None
+    )
+    collect_parser.add_argument(
+        "--output", "-o",
+        help="Output file path (default: stdout).",
+        type=Path,
+        default=None
+    )
+    # Schema validation is now handled by the schema itself
+    
+    return parser
 
-def parse_meta(kv_list):
-    md = {}
-    for item in kv_list:
-        if "=" not in item:
-            raise SystemExit(f"--meta must be k=v, got: {item}")
-        k, v = item.split("=", 1)
-        md[k] = v
-    return md
+def main(args: Optional[List[str]] = None) -> int:
+    """Main entry point for the CLI.
+    
+    Args:
+        args: Command line arguments (defaults to sys.argv[1:])
+        
+    Returns:
+        int: Exit code (0 for success, non-zero for error)
+    """
+    # Parse command line arguments
+    parser = build_parser()
+    parsed_args = parser.parse_args(args)
+    
+    if parsed_args.cmd == "collect":
+        # Get available collectors
+        available_collectors = load_collectors()
+        
+        # Check if all requested collectors exist
+        invalid = [name for name in parsed_args.collectors if name not in available_collectors]
+        if invalid:
+            print(f"Error: Unknown collectors: {', '.join(invalid)}", file=sys.stderr)
+            print(f"Available collectors: {', '.join(sorted(available_collectors.keys()))}", file=sys.stderr)
+            return 1
+        
+        result = {}
 
-def main(argv=None):
-    args = build_parser().parse_args(argv)
-    if args.cmd == "collect":
-        extra = parse_meta(args.meta)
-        data = run_collector(
-            collector_name=args.collector,
-            schema_path=(args.schema or bundled_schema_path()),
-            validate=not args.no_validate,
-            extra_metadata=extra or None,
-        )
-        out = json.dumps(data, indent=2, sort_keys=False)
-        if args.output:
-            with open(args.output, "w", encoding="utf-8") as f:
-                f.write(out + "\n")
-        else:
-            print(out)
-    else:
-        raise SystemExit(2)
+        try:
+            # Run the collectors
+            result = collect_all(
+                collector_names=parsed_args.collectors,
+                schema_path=str(parsed_args.schema) if parsed_args.schema else str(bundled_schema_path())
+            )
+            
+            # Convert to JSON
+            output = json.dumps(result, indent=2)
+            
+            # Write to file or stdout
+            if parsed_args.output:
+                parsed_args.output.write_text(output)
+                print(f"Results written to {parsed_args.output}", file=sys.stderr)
+            else:
+                print(output)
+                
+            return 0
+            
+        except Exception as e:
+            print(f"Error in cli.py parsing result from collect_all(): {e}", file=sys.stderr)
+            if hasattr(e, '__traceback__'):
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+            return 1
+    
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

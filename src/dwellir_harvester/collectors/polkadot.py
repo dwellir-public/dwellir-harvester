@@ -6,8 +6,8 @@ import subprocess
 import shutil
 from typing import Dict, Optional, Tuple, List
 from urllib import request, error as urlerror
-from ..core import CollectResult, CollectorPartialError, CollectorFailedError, BaseCollector
-
+from ..core import CollectResult, CollectorPartialError, CollectorFailedError
+from .collector_base import CollectorBase
 
 DEFAULT_RPC_URL = "http://127.0.0.1:9944"
 
@@ -70,7 +70,7 @@ def _get_genesis_hash(url: str) -> Tuple[Optional[str], Optional[str]]:
     except Exception as e:
         return None, f"rpc chain_getBlockHash parse error for {res!r}: {e}"
 
-class PolkadotCollector(BaseCollector):
+class PolkadotCollector(CollectorBase):
     NAME = "polkadot"
     VERSION = "0.0.1"
     

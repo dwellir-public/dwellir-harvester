@@ -1,194 +1,172 @@
-# dwellir-harvester
+# Dwellir Harvester
 
 An extensible Python tool to collect metadata from **local blockchain nodes** and output a JSON file that conforms to a shared JSON Schema.
 
 > All timestamps use RFC 3339 / ISO 8601 with timezone.
 
-## Quick start (local dev)
+## System Requirements
+
+- Python 3.9 or higher
+- Systemd (for running as a service)
+
+## Installation
+
+### From Source
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-org/dwellir-harvester.git
+   cd dwellir-harvester
+   ```
+
+2. Create and activate a virtual environment:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. Install the package in development mode:
+   ```bash
+   pip install -e .
+   ```
+
+### System-wide Installation
+
+For production use, you can install the package system-wide:
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e .
-
-# Run with the safe default "null" collector (no local node required)
-dwellir-harvester collect   --schema schema/blockchain_node_metadata.schema.json   --collector null   --output out.json
+sudo pip install .
 ```
 
-Open `out.json` to see the collected data.
+## Quick Start
 
-## Adding a new collector
-
-Create a new module under `src/dwellir_harvester/collectors/` and implement a class
-that derives from `BaseCollector`. Example:
-
-```python
-from dwellir_harvester.core import BaseCollector, CollectResult
-
-class MyCollector(BaseCollector):
-    NAME = "my_chain_client"
-    VERSION = "1.0.0"
-
-    def collect(self) -> CollectResult:
-        return CollectResult(
-            blockchain={
-                "blockchain_ecosystem": "MyChain",
-                "blockchain_network_name": "mainnet",
-                "chain_id": 4242,
-            },
-            workload={
-                "client_name": "myclient",
-                "client_version": "v1.2.3",
-            },
-        )
-```
-
-Export it by adding it to `__all__` in `collectors/__init__.py` so the CLI can find it
-by `--collector my_chain_client`.
-
-### Built-in collectors
-
-- `null` — static, schema-valid placeholder; **default** and requires no node.
-- `reth` — queries a local Reth JSON-RPC and `reth --version` (best-effort).
-- `op-reth` — same logic as `reth`, only `workload.client_name` differs.
-- `bera-reth` — same logic as `reth`, only `workload.client_name` differs.
-- `substrate` — generic Substrate collector; queries `system_version`, `system_chain`, `chain_getBlockHash(0)`, and uses `system_name` for client_name when not overridden.
-- `ajuna` — Substrate wrapper that hardcodes `workload.client_name` to `ajuna`.
-- `dummychain` — Dummychain testing chain. (Must sudo snap connect dwellir-harvester:dummychain-bins dummychain:bins)
- 
-All Reth variants use the same environment variable for RPC:
-- `RETH_RPC_URL` (default: `http://127.0.0.1:8545`)
- 
-All Substrate variants use the same environment variable for RPC:
-- `SUBSTRATE_RPC_URL` (default: `http://127.0.0.1:9933`)
- 
-Examples:
- 
-```bash
-# Dummychain (snap) - connects via snap plugs
-sudo snap dummychain --edge
-sudo snap connect dwellir-harvester:dummychain-bins dummychain:bins
-dwellir-harvester collect --collector dummychain
-
-# default reth
-dwellir-harvester collect --collector reth
- 
-# Optimism reth
-dwellir-harvester collect --collector op-reth
- 
-# Bera reth
-dwellir-harvester collect --collector bera-reth
- 
-# Generic substrate node (Polkadot/Kusama/Westend/etc.)
-dwellir-harvester collect --collector substrate
-
-# Ajuna substrate node
-dwellir-harvester collect --collector ajuna
-```
-
-
-## Validation
-
-We validate output with `jsonschema`. You can disable validation via `--no-validate`.
-
----
-
-## Snap: packaged daemon
-
-The snap ships a small HTTP daemon that periodically runs the collector and serves the latest metadata.
-
-### Files & paths
-
-- Read-only snap payload: `$SNAP`
-- Writable data: `$SNAP_COMMON` → `/var/snap/blockchain-collector/common`
-  - Metadata JSON: `/var/snap/blockchain-collector/common/metadata.json`
-  - Daemon log: `/var/snap/blockchain-collector/common/daemon.log`
-
-### Install
+### Run a Single Collection
 
 ```bash
-sudo snap install blockchain-collector --channel=edge
-# or: sudo snap install ./blockchain-collector_*.snap --dangerous
+# Run with the safe default "host" collector (basic system information)
+dwellir-harvester collect --collector host --output out.json
 ```
 
-### Configure (snap settings)
+### Run the Daemon
 
-These keys are read dynamically by the daemon; no rebuild needed.
-
-| Key                      | Type     | Default | Purpose |
-|--------------------------|----------|---------|---------|
-| `collector.name`         | string   | `null`  | Which collector to run (e.g., `null`, `reth`, `op-reth`, `bera-reth`, `substrate`, `ajuna`). |
-| `collector.validate`     | bool     | `true`  | Validate output JSON against the schema. |
-| `collector.schema_path`  | string   | *(none)*| Path to JSON Schema file inside the snap or on disk. |
-| `collector.interval`     | int sec  | `300`   | Background run interval in seconds (min 5). |
-| `service.port`           | int      | `18080`  | HTTP server listen port. |
-| `log.level`              | string   | `INFO`  | One of: `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`. |
-
-#### Examples
+The harvester can run as a daemon that periodically collects data and serves it via HTTP:
 
 ```bash
-# Use the safe default
-sudo snap set dwellir-harvester collector.name=null
-
-# Switch to Reth later
-sudo snap set dwellir-harvester collector.name=reth
-
-# Point to a schema (path must be accessible to the snap)
-sudo snap set dwellir-harvester collector.schema_path=$SNAP/schema/blockchain_node_metadata.schema.json
-
-# Turn off validation
-sudo snap set dwellir-harvester collector.validate=false
-
-# Run every minute
-sudo snap set dwellir-harvester collector.interval=60
-
-# Change HTTP port
-sudo snap set dwellir-harvester service.port=28080
-
-# Increase verbosity
-sudo snap set dwellir-harvester log.level=DEBUG
-
-# Inspect current config
-snap get dwellir-harvester
+# Start the daemon (runs in foreground)
+dwellir-harvester-daemon
 ```
 
-> After changing settings, the daemon will pick them up on the next cycle. To force now:  
-> `sudo snap restart dwellir-harvester.daemon`
+By default, the daemon:
+- Runs on `0.0.0.0:18080`
+- Collects data every 5 minutes
+- Uses the "host" collector
+- Validates output against the schema
 
-### Start / stop / status
+## Configuration
 
-```bash
-# Check services
-snap services dwellir-harvester
+### Command Line Arguments
 
-# Start / stop / restart the daemon
-sudo snap start dwellir-harvester.daemon
-sudo snap stop dwellir-harvester.daemon
-sudo snap restart dwellir-harvester.daemon
+```
+usage: dwellir-harvester-daemon [-h] [--collectors COLLECTORS [COLLECTORS ...]] [--host HOST] [--port PORT]
+                               [--interval INTERVAL] [--schema SCHEMA] [--no-validate] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
 
-# Systemd status (advanced)
-systemctl status snap.dwellir-harvester.daemon.service
+Dwellir Harvester Daemon
+
+options:
+  -h, --help            show this help message and exit
+  --collectors COLLECTORS [COLLECTORS ...]
+                        List of collectors to run (default: ['host'])
+  --host HOST           Host to bind the HTTP server to (default: 0.0.0.0)
+  --port PORT           Port to run the HTTP server on (default: 18080)
+  --interval INTERVAL   Collection interval in seconds (default: 300)
+  --schema SCHEMA       Path to JSON schema file (defaults to bundled schema)
+  --no-validate         Disable schema validation
+  --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                        Logging level (default: INFO)
 ```
 
-### Logs
+### Environment Variables
 
-```bash
-# Journald (live)
-snap logs dwellir-harvester.daemon -f
-# or
-journalctl -u snap.dwellir-harvester.daemon.service -o cat -f
+- `DATA_DIR`: Directory to store data files (default: `/var/lib/dwellir-harvester`)
+- `LOG_LEVEL`: Logging level (default: `INFO`)
+- `PORT`: HTTP server port (default: `18080`)
+- `INTERVAL`: Collection interval in seconds (default: `300`)
+- `COLLECTORS`: Space-separated list of collectors to run (default: `host`)
+- `VALIDATE`: Enable/disable schema validation (default: `true`)
 
-# File log
-sudo tail -F /var/snap/dwellir-harvester/common/daemon.log
-```
+## Running as a Systemd Service
 
-### Shell inside the snap environment
+1. Install the service using the provided script:
+   ```bash
+   sudo scripts/install-service.sh
+   ```
 
-```bash
-sudo snap run --shell dwellir-harvester.daemon
-env | grep ^SNAP
-ls -al "$SNAP" "$SNAP_COMMON"
-exit
-```
+2. The service will be installed with default settings. You can customize it by editing:
+   ```bash
+   sudo nano /etc/dwellir-harvester/config
+   ```
+
+3. Start and enable the service:
+   ```bash
+   sudo systemctl start dwellir-harvester
+   sudo systemctl enable dwellir-harvester
+   ```
+
+4. Check the status:
+   ```bash
+   systemctl status dwellir-harvester
+   ```
+
+5. View logs:
+   ```bash
+   journalctl -u dwellir-harvester -f
+   ```
+
+## Available Collectors
+
+- `host` - Collects basic system information (default)
+- `reth` - Collects data from a Reth node
+- `substrate` - Collects data from a Substrate node
+
+## API Endpoints
+
+- `GET /metadata` - Get the latest collected data
+- `GET /healthz` - Health check endpoint
+
+## Development
+
+### Setting Up for Development
+
+1. Clone the repository and install development dependencies:
+   ```bash
+   git clone https://github.com/your-org/dwellir-harvester.git
+   cd dwellir-harvester
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -e ".[dev]"
+   ```
+
+2. Run tests:
+   ```bash
+   pytest
+   ```
+
+3. Run linters:
+   ```bash
+   black .
+   isort .
+   mypy .
+   ```
+
+### Adding a New Collector
+
+1. Create a new Python file in `src/dwellir_harvester/collectors/`
+2. Implement a class that inherits from `BaseCollector`
+3. Add it to `__all__` in `collectors/__init__.py`
+
+## License
+
+MIT
 
 ---
 
@@ -235,14 +213,17 @@ pytest -q
 
 ```bash
 # build
-python -m pip install build twine
-python -m build  # creates dist/*.tar.gz and dist/*.whl
+python3 -m pip install build twine
+python3 -m build  # creates dist/*.tar.gz and dist/*.whl
 
 # upload to TestPyPI first (recommended)
-python -m twine upload -r testpypi dist/*
+python3 -m twine upload -r testpypi dist/*
+
+# Install from testpypi
+pip3 install --index-url https://test.pypi.org/simple/ --no-deps dwellir-harvester
 
 # then to PyPI
-python -m twine upload dist/*
+python3 -m twine upload dist/*
 ```
 
 ---

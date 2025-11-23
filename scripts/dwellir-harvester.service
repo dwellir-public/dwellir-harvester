@@ -1,0 +1,38 @@
+[Unit]
+Description=Dwellir Harvester Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=harvester
+Group=harvester
+Environment=PYTHONPATH=/opt/dwellir-harvester/src
+Environment=DATA_DIR=/var/lib/dwellir-harvester
+Environment=LOG_LEVEL=INFO
+Environment=PORT=18080
+Environment=INTERVAL=300
+Environment=COLLECTORS=host
+Environment=VALIDATE=true
+WorkingDirectory=/opt/dwellir-harvester
+ExecStart=/opt/dwellir-harvester/scripts/start-harvester.sh
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

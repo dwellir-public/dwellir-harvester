@@ -1,10 +1,11 @@
 from __future__ import annotations
 from typing import Dict
-from ..core import BaseCollector, CollectResult
+from ..core import CollectResult
+from .collector_base import CollectorBase
 from ._reth_common import collect_reth, RETH_COLLECTOR_VERSION
 
 
-class BeraRethCollector(BaseCollector):
+class BeraRethCollector(CollectorBase):
     NAME = "bera-reth"
     VERSION = RETH_COLLECTOR_VERSION
 

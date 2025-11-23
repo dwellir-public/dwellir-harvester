@@ -1,348 +1,239 @@
 #!/usr/bin/env python3
-# stdlib-only HTTP daemon that runs the configured collector and serves /metadata
 import os
 import sys
 import json
 import time
-import shutil
-import socket
 import logging
 import threading
-import subprocess
-from logging.handlers import RotatingFileHandler
+import argparse
+import tempfile
+from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import Dict, Any, Optional, List
 
-SNAP = os.environ.get("SNAP", "")
-SNAP_COMMON = os.environ.get("SNAP_COMMON", "/var/snap/dwellir-harvester/common")
-METADATA_PATH = os.path.join(SNAP_COMMON, "metadata.json")
-LOG_PATH = os.path.join(SNAP_COMMON, "daemon.log")
+# Import core functionality from the package
+from dwellir_harvester.core import collect_all, bundled_schema_path, load_collectors
+from dwellir_harvester.cli import build_parser
 
-# ---------- snapctl helper (NO LOGGING) ----------
-def _snapctl_get_nolog(key: str, default=None):
-    """Safe to call before logging is configured."""
-    try:
-        out = subprocess.check_output(["snapctl", "get", key], text=True).strip()
-        if out == "":
-            return default
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s [%(threadName)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S%z'
+)
+log = logging.getLogger("dwellir-harvester")
+
+class CollectorDaemon:
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.latest_results: Dict[str, Any] = {}
+        self.lock = threading.Lock()
+        self.running = False
+        self.worker_thread: Optional[threading.Thread] = None
+        self.httpd: Optional[HTTPServer] = None
+
+    def run_collectors(self) -> Dict[str, Any]:
+        """Run all collectors and return the results."""
         try:
-            return json.loads(out)
-        except Exception:
-            return out
-    except Exception:
-        return default
+            # Get the schema path
+            schema_path = self.config.get('schema_path')
+            if not schema_path:
+                schema_path = str(bundled_schema_path())
 
-# ---------- logging ----------
-def _setup_logging():
-    os.makedirs(SNAP_COMMON, exist_ok=True)
+            # Run the collectors
+            result = collect_all(
+                collector_names=self.config['collectors'],
+                schema_path=schema_path,
+                validate=self.config.get('validate', True)
+            )
 
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)  # temporary until we read level
+            # Update the latest results
+            with self.lock:
+                self.latest_results = result
 
-    fmt = logging.Formatter(
-        fmt="%(asctime)s %(levelname)s [%(threadName)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S%z",
-    )
+            return result
 
-    # 1) Stream to stderr (captured by journald)
-    sh = logging.StreamHandler(sys.stderr)
-    sh.setFormatter(fmt)
-    root.addHandler(sh)
+        except Exception as e:
+            log.error(f"Failed to run collectors: {e}")
+            with self.lock:
+                self.latest_results = {
+                    "error": str(e),
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                }
+            return self.latest_results
 
-    # 2) Rotate to file in SNAP_COMMON
-    fh = RotatingFileHandler(LOG_PATH, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
-    fh.setFormatter(fmt)
-    root.addHandler(fh)
-
-    # Read desired level without using logging
-    lvl = _snapctl_get_nolog("log.level", "INFO")
-    level_map = {"CRITICAL":50,"ERROR":40,"WARNING":30,"INFO":20,"DEBUG":10,"NOTSET":0}
-    root.setLevel(level_map.get(str(lvl).upper(), 20))
-
-_setup_logging()
-log = logging.getLogger("collector-daemon")
-
-# ---------- snapctl helper (WITH LOGGING) ----------
-def _snapctl_get(key: str, default=None):
-    try:
-        log.debug("snapctl get %s", key)
-        out = subprocess.check_output(["snapctl", "get", key], text=True).strip()
-        log.debug("snapctl get %s -> %r", key, out)
-        if out == "":
-            return default
-        try:
-            return json.loads(out)
-        except Exception:
-            return out
-    except FileNotFoundError as e:
-        log.warning("snapctl not found (%s). Using default for %s=%r", e, key, default)
-        return default
-    except subprocess.CalledProcessError as e:
-        log.warning("snapctl get %s failed (not set yet?): rc=%s stderr=%r", key, e.returncode, e.stderr)
-        return default
-    except Exception:
-        log.exception("snapctl get %s crashed", key)
-        return default
-
-def _dump_startup_env():
-    try:
-        log.info("==== Startup environment dump ====")
-        log.info("Python: %s", sys.version.replace("\n", " "))
-        log.info("Executable: %s", sys.executable)
-        log.info("CWD: %s", os.getcwd())
-        log.info("EUID: %s", os.geteuid() if hasattr(os, "geteuid") else "n/a")
-        log.info("User: %s", os.environ.get("USER", "n/a"))
-        log.info("Hostname: %s", socket.gethostname())
-        for k in sorted([k for k in os.environ if k.startswith("SNAP")]):
-            log.info("%s=%s", k, os.environ[k])
-        log.info("PATH=%s", os.environ.get("PATH", ""))
-        log.info("METADATA_PATH=%s", METADATA_PATH)
-        log.info("LOG_PATH=%s", LOG_PATH)
-        # sanity checks
-        for path in [SNAP, SNAP_COMMON, os.path.dirname(METADATA_PATH)]:
-            if path:
-                try:
-                    st = os.stat(path)
-                    log.info("stat(%s): mode=%o uid=%s gid=%s", path, st.st_mode & 0o777, st.st_uid, st.st_gid)
-                except Exception as e:
-                    log.warning("stat(%s) failed: %s", path, e)
-        # helpful "which"
-        for name in ("python3", "dwellir-harvester", "snapctl"):
-            log.info("which %s -> %s", name, shutil.which(name))
-    except Exception:
-        log.exception("Startup env dump failed")
-
-def _find_collector_exe() -> str:
-    """Prefer the snap's venv binary; fall back to PATH."""
-    # SNAP/venv/bin/...
-    snap = os.environ.get("SNAP")
-    if snap:
-        candidate = os.path.join(snap, "venv", "bin", "dwellir-harvester")
-        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
-    # PATH
-    exe = shutil.which("dwellir-harvester")
-    return exe or "dwellir-harvester"
-
-def _summarize_error(stderr: str) -> str:
-    """
-    Strip Python tracebacks and return a concise reason.
-    Keeps the full text in the logs; HTTP response only gets the summary.
-    """
-    if not stderr:
-        return "collector failed (no stderr)"
-    lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
-    # Try to extract the last exception line
-    for ln in reversed(lines):
-        # e.g. "dwellir_harvester.core.CollectorFailedError: message"
-        if ":" in ln and "Traceback" not in ln:
-            return ln
-    # Fallback: first and last line
-    if len(lines) >= 2:
-        return f"{lines[0]} … {lines[-1]}"
-    return lines[-1]
-
-def _read_metadata_status(path: str):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        md = data.get("metadata", {})
-        status = md.get("last_collect_status", "unknown")
-        errors = md.get("last_collect_errors", [])
-        return status, errors
-    except FileNotFoundError:
-        return "missing", ["metadata file not found"]
-    except Exception as e:
-        log.exception("Failed to read/parse metadata.json")
-        return "invalid", [f"invalid metadata: {e}"]
-
-
-def _run_once():
-    collector = _snapctl_get("collector.name", "null")
-    validate_flag = _snapctl_get("collector.validate", True)
-    schema_path = _snapctl_get("collector.schema_path", None)
-    timeout_sec = _snapctl_get("collector.timeout", 60)
-
-    try:
-        timeout_sec = int(timeout_sec)
-    except Exception:
-        log.warning("Invalid collector.timeout=%r, defaulting to 60", timeout_sec)
-        timeout_sec = 60
-
-    exe = _find_collector_exe()
-    cmd = [exe, "collect", "--collector", collector, "--output", METADATA_PATH]
-    if not validate_flag:
-        cmd.append("--no-validate")
-    if schema_path:
-        cmd.extend(["--schema", schema_path])
-
-    env = os.environ.copy()
-    if env.get("SNAP"):
-        env["PATH"] = os.pathsep.join([os.path.join(env["SNAP"], "venv", "bin"), env.get("PATH", "")])
-
-    log.info("Running collector: %r", cmd)
-
-    try:
-        # Do NOT use check=True so we can still inspect the produced file
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout_sec)
-    except subprocess.TimeoutExpired:
-        log.error("Collector timeout after %ss", timeout_sec)
-        os.makedirs(os.path.dirname(METADATA_PATH), exist_ok=True)
-        with open(METADATA_PATH, "w", encoding="utf-8") as f:
-            json.dump({
-                "metadata": {
-                    "collector_name": collector,
-                    "last_collect_status": "failed",
-                    "last_collect_errors": [f"timeout after {timeout_sec}s"],
-                },
-                "blockchain": {},
-                "workload": {},
-            }, f)
-        return {"ok": False, "error": f"timeout after {timeout_sec}s", "cmd": cmd}
-
-    # Log outputs for debugging
-    if proc.stdout:
-        log.debug("collector stdout:\n%s", proc.stdout.strip())
-    if proc.stderr:
-        log.debug("collector stderr:\n%s", proc.stderr.strip())
-
-    # Ensure file exists (create minimal one if needed)
-    if not os.path.isfile(METADATA_PATH):
-        os.makedirs(os.path.dirname(METADATA_PATH), exist_ok=True)
-        with open(METADATA_PATH, "w", encoding="utf-8") as f:
-            json.dump({
-                "metadata": {
-                    "collector_name": collector,
-                    "last_collect_status": "failed",
-                    "last_collect_errors": ["collector produced no output file"],
-                },
-                "blockchain": {},
-                "workload": {},
-            }, f)
-
-    # Decide success/partial/failed based on the file’s metadata
-    status, errors = _read_metadata_status(METADATA_PATH)
-
-    if status != "success":
-        # Treat partial/failed/missing/invalid as error
-        brief = errors[0] if errors else f"status={status}"
-        log.warning("Collector not successful (status=%s): %s", status, brief)
-        return {
-            "ok": False,
-            "status": status,
-            "error": brief,
-            "cmd": cmd,
-        }
-
-    # Also fail if the process had a non-zero exit even though file says success
-    if proc.returncode != 0:
-        log.warning("Collector exit code=%s despite status=success", proc.returncode)
-        return {
-            "ok": False,
-            "status": status,
-            "error": f"exit_code={proc.returncode}",
-            "cmd": cmd,
-        }
-
-    return {"ok": True, "cmd": cmd}
-
-
-
-def _worker():
-    interval = _snapctl_get("collector.interval", 300)
-    try:
-        interval = int(interval)
-    except Exception:
-        log.warning("Invalid collector.interval=%r, using 300", interval)
-        interval = 300
-    log.info("Background worker started; interval=%s seconds", interval)
-    while True:
-        try:
-            _run_once()
-        except Exception:
-            log.exception("_run_once crashed")
-        time.sleep(max(5, interval))
-
-# ---------- HTTP ----------
-class _Handler(BaseHTTPRequestHandler):
-    server_version = "CollectorHTTP/1.0"
-
-    def log_message(self, fmt, *args):
-        log.info("%s - - %s", self.address_string(), fmt % args)
-
-    def _set(self, code=200, ctype="application/json"):
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-
-    def do_GET(self):
-        path = self.path.split("?", 1)[0]
-        log.debug("HTTP GET %s", path)
-        if path == "/metadata":
+    def _worker_loop(self):
+        """Background worker that runs collectors on a schedule."""
+        while self.running:
             try:
-                with open(METADATA_PATH, "rb") as f:
-                    data = f.read()
-                self._set(200, "application/json")
-                self.wfile.write(data)
-            except FileNotFoundError:
-                log.warning("Metadata not found at %s", METADATA_PATH)
-                self._set(404)
-                self.wfile.write(b'{"error":"metadata not found"}')
-        elif path == "/healthz":
-            self._set(200, "text/plain")
-            self.wfile.write(b"ok")
-        elif path == "/env":
-            self._set(200, "application/json")
-            payload = {
-                "snap": {k: os.environ[k] for k in os.environ if k.startswith("SNAP")},
-                "path": os.environ.get("PATH", ""),
-                "metadata_path": METADATA_PATH,
-                "log_path": LOG_PATH,
-            }
-            self.wfile.write(json.dumps(payload, indent=2).encode())
-        else:
-            self._set(404)
-            self.wfile.write(b'{"error":"not found"}')
+                log.info("Running scheduled collection")
+                self.run_collectors()
+            except Exception as e:
+                log.error(f"Error in collector worker: {e}")
 
-    def do_POST(self):
-        path = self.path.split("?", 1)[0]
-        log.debug("HTTP POST %s", path)
-        if path == "/run":
-            res = _run_once()
-            self._set(200 if res.get("ok") else 500)
-            self.wfile.write(json.dumps(res).encode())
-        else:
-            self._set(404)
-            self.wfile.write(b'{"error":"not found"}')
+            # Wait for the next interval
+            time.sleep(self.config.get('interval', 300))  # Default 5 minutes
+
+    def start(self):
+        """Start the daemon and HTTP server."""
+        if self.running:
+            log.warning("Daemon is already running")
+            return
+
+        self.running = True
+
+        # Initial collection
+        log.info("Running initial collection")
+        self.run_collectors()
+
+        # Start the background worker
+        self.worker_thread = threading.Thread(
+            target=self._worker_loop,
+            name="collector-worker",
+            daemon=True
+        )
+        self.worker_thread.start()
+
+        # Start the HTTP server
+        addr = (self.config.get('host', ''), self.config.get('port', 18080))
+        httpd = HTTPServer(addr, self._make_handler())
+        self.httpd = httpd
+
+        log.info(f"Starting HTTP server on {addr[0]}:{addr[1]}")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            log.info("Shutting down...")
+        finally:
+            self.stop()
+
+    def stop(self):
+        """Stop the daemon and clean up."""
+        self.running = False
+        if self.worker_thread:
+            self.worker_thread.join(timeout=5)
+        if self.httpd:
+            self.httpd.shutdown()
+            self.httpd.server_close()
+
+    def _make_handler(self):
+        """Create a request handler with access to this daemon instance."""
+        daemon = self
+
+        class RequestHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                path = self.path.split('?', 1)[0]
+                if path == '/metadata':
+                    self._handle_metadata()
+                elif path == '/healthz':
+                    self._handle_healthz()
+                else:
+                    self._handle_not_found()
+
+            def _set_headers(self, status_code=200, content_type="application/json"):
+                self.send_response(status_code)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+
+            def _handle_metadata(self):
+                with daemon.lock:
+                    data = json.dumps(daemon.latest_results, indent=2).encode('utf-8')
+                
+                self._set_headers()
+                self.wfile.write(data)
+
+            def _handle_healthz(self):
+                self._set_headers(content_type="text/plain")
+                self.wfile.write(b"ok\n")
+
+            def _handle_not_found(self):
+                self._set_headers(404)
+                self.wfile.write(json.dumps({
+                    "error": "Not found",
+                    "endpoints": ["/metadata", "/healthz"]
+                }).encode('utf-8'))
+
+            def log_message(self, fmt, *args):
+                log.info(f"{self.address_string()} - {fmt % args}")
+
+        return RequestHandler
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Dwellir Harvester Daemon',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    parser.add_argument(
+        '--collectors',
+        nargs='+',
+        default=['host'],
+        help='List of collectors to run'
+    )
+    parser.add_argument(
+        '--host',
+        default='0.0.0.0',
+        help='Host to bind the HTTP server to'
+    )
+    parser.add_argument(
+        '--port',
+        type=int,
+        default=18080,
+        help='Port to run the HTTP server on'
+    )
+    parser.add_argument(
+        '--interval',
+        type=int,
+        default=300,
+        help='Collection interval in seconds'
+    )
+    parser.add_argument(
+        '--schema',
+        help='Path to JSON schema file (defaults to bundled schema)'
+    )
+    parser.add_argument(
+        '--no-validate',
+        action='store_false',
+        dest='validate',
+        help='Disable schema validation'
+    )
+    parser.add_argument(
+        '--log-level',
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help='Logging level'
+    )
+    
+    return parser.parse_args()
 
 def main():
-    _dump_startup_env()
-
-    # Initial run so the file exists
+    """Main entry point."""
+    args = parse_args()
+    
+    # Configure logging
+    logging.getLogger().setLevel(args.log_level)
+    
+    # Create and start the daemon
+    daemon = CollectorDaemon({
+        'collectors': args.collectors,
+        'host': args.host,
+        'port': args.port,
+        'interval': args.interval,
+        'schema_path': args.schema,
+        'validate': args.validate
+    })
+    
     try:
-        log.info("Initial _run_once()")
-        _run_once()
-    except Exception:
-        log.exception("Initial run failed")
+        daemon.start()
+    except KeyboardInterrupt:
+        log.info("Shutting down...")
+    except Exception as e:
+        log.error(f"Fatal error: {e}")
+        sys.exit(1)
+    finally:
+        daemon.stop()
 
-    # Background loop
-    t = threading.Thread(target=_worker, name="collector-worker", daemon=True)
-    t.start()
-
-    port = _snapctl_get("service.port", 18080)
-    try:
-        port = int(port)
-    except Exception:
-        log.warning("Invalid service.port=%r, defaulting to 18080", port)
-        port = 18080
-
-    addr = ("0.0.0.0", port)
-    log.info("HTTP server starting on %s:%s", *addr)
-    try:
-        HTTPServer(addr, _Handler).serve_forever()
-    except Exception:
-        log.exception("HTTP server crashed")
-        raise
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,9 +1,10 @@
 from __future__ import annotations
-from ..core import BaseCollector, CollectResult
+from ..core import CollectResult
+from .collector_base import CollectorBase
 from ._substrate_common import collect_substrate, SUBSTRATE_COLLECTOR_VERSION
 
 
-class AjunaCollector(BaseCollector):
+class AjunaCollector(CollectorBase):
     NAME = "ajuna"
     VERSION = SUBSTRATE_COLLECTOR_VERSION
 
