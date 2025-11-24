@@ -37,17 +37,34 @@ class CollectorDaemon:
 
     def run_collectors(self) -> Dict[str, Any]:
         """Run all collectors and return the results."""
+        debug = self.config.get('debug', False)
+        if debug:
+            log.setLevel(logging.DEBUG)
+            log.debug("Debug mode enabled")
+            log.debug(f"Running collectors: {self.config['collectors']}")
+            log.debug(f"Validation is {'enabled' if self.config.get('validate', True) else 'disabled'}")
+            
         try:
             # Get the schema path
             schema_path = self.config.get('schema_path')
             if not schema_path:
                 schema_path = str(bundled_schema_path())
+                if debug:
+                    log.debug(f"Using bundled schema from: {schema_path}")
+            else:
+                if debug:
+                    log.debug(f"Using custom schema from: {schema_path}")
+
+            if debug:
+                log.debug("Starting collection...")
+                start_time = time.time()
 
             # Run the collectors
             result = collect_all(
                 collector_names=self.config['collectors'],
                 schema_path=schema_path,
-                validate=self.config.get('validate', True)
+                validate=self.config.get('validate', True),
+                debug=debug
             )
 
             # Update the latest results
@@ -76,15 +93,37 @@ class CollectorDaemon:
 
     def _worker_loop(self):
         """Background worker that runs collectors on a schedule."""
+        debug = self.config.get('debug', False)
+        interval = self.config.get('interval', 300)
+        
+        if debug:
+            log.debug(f"Starting worker loop with {interval}s interval")
+            
         while self.running:
             try:
+                start_time = time.time()
                 log.info("Running scheduled collection")
+                if debug:
+                    log.debug(f"Collection started at {time.ctime(start_time)}")
+                    
                 self.run_collectors()
+                
+                if debug:
+                    duration = time.time() - start_time
+                    log.debug(f"Collection completed in {duration:.2f} seconds")
+                    
             except Exception as e:
                 log.error(f"Error in collector worker: {e}")
+                if debug:
+                    import traceback
+                    log.debug(f"Full traceback:\n{traceback.format_exc()}")
 
             # Wait for the next interval
-            time.sleep(self.config.get('interval', 300))  # Default 5 minutes
+            sleep_time = max(0, interval - (time.time() - start_time))
+            if debug and sleep_time > 0:
+                log.debug(f"Sleeping for {sleep_time:.1f} seconds until next collection")
+                
+            time.sleep(sleep_time)
 
     def start(self):
         """Start the daemon and HTTP server."""
@@ -187,9 +226,11 @@ def parse_args():
     parser.add_argument('--schema', help='Path to JSON schema file (defaults to bundled schema)')
     parser.add_argument('--no-validate', action='store_false', dest='validate',
                       help='Disable schema validation')
+    parser.add_argument('--debug', action='store_true',
+                      help='Enable debug output (overrides --log-level)')
     parser.add_argument('--log-level', default='INFO',
                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                      help='Logging level (default: INFO)')
+                      help='Logging level (default: INFO, ignored if --debug is used)')
     
     return parser.parse_args()
 
@@ -198,7 +239,16 @@ def main():
     args = parse_args()
     
     # Configure logging
-    logging.getLogger().setLevel(args.log_level)
+    log_level = logging.DEBUG if args.debug else getattr(logging, args.log_level)
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s %(levelname)s [%(threadName)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S%z'
+    )
+    
+    if args.debug:
+        log.info("Debug mode enabled")
+        log.debug(f"Command line arguments: {sys.argv}")
     
     # Create and start the daemon
     daemon = CollectorDaemon({
@@ -208,6 +258,8 @@ def main():
         'interval': args.interval,
         'validate': args.validate,
         'output_file': args.output,
+        'debug': args.debug,
+        'schema_path': args.schema  # Pass the schema path to the daemon
     })
     
     try:

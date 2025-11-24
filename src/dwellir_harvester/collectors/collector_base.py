@@ -52,12 +52,33 @@ class CollectorBase(ABC):
         Returns:
             Dict containing 'meta' and 'data' keys with the collected data.
         """
+        collection_start = datetime.now(timezone.utc)
+        debug_info = {}
+        
+        if debug:
+            print(f"[DEBUG] Starting collector: {self.NAME} (version: {self.VERSION})", file=sys.stderr)
+            debug_info.update({
+                "start_time": collection_start.isoformat(),
+                "python_version": sys.version,
+                "platform": sys.platform,
+                "executable": sys.executable,
+                "collector_module": self.__class__.__module__
+            })
+        
         try:
+            if debug:
+                print(f"[DEBUG] Collecting data with {self.NAME}...", file=sys.stderr)
+            
             # Run the collector
             result = self.collect()
             
+            if debug:
+                print(f"[DEBUG] {self.NAME} collection completed successfully", file=sys.stderr)
+            
             # If the collector didn't return a CollectResult, wrap it
             if not isinstance(result, CollectResult):
+                if debug:
+                    print(f"[DEBUG] Wrapping raw result in CollectResult", file=sys.stderr)
                 result = CollectResult.create(
                     collector_name=self.NAME,
                     collector_version=self.VERSION,
@@ -69,6 +90,8 @@ class CollectorBase(ABC):
             
             # Ensure the result has the correct structure
             if "meta" not in result_dict or "data" not in result_dict:
+                if debug:
+                    print(f"[DEBUG] Restructuring result to standard format", file=sys.stderr)
                 result_dict = {
                     "meta": {
                         "collector_type": result_dict.get("metadata", {}).get("collector_type", self.COLLECTOR_TYPE),
@@ -82,11 +105,15 @@ class CollectorBase(ABC):
                 
             # Add debug information if enabled
             if debug:
-                result_dict["meta"]["debug"] = {
-                    "python_version": sys.version,
-                    "platform": sys.platform,
-                    "executable": sys.executable
+                debug_info["end_time"] = datetime.now(timezone.utc).isoformat()
+                debug_info["duration_seconds"] = (datetime.now(timezone.utc) - collection_start).total_seconds()
+                debug_info["result_structure"] = {
+                    "has_meta": "meta" in result_dict,
+                    "has_data": "data" in result_dict,
+                    "data_keys": list(result_dict.get("data", {}).keys()) if isinstance(result_dict.get("data"), dict) else []
                 }
+                result_dict["meta"]["debug"] = debug_info
+                print(f"[DEBUG] Collector {self.NAME} completed in {debug_info['duration_seconds']:.2f} seconds", file=sys.stderr)
                 
             return result_dict
             
