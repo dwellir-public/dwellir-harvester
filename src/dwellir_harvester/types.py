@@ -1,5 +1,6 @@
 """Shared type and exception definitions for the harvester."""
 from dataclasses import dataclass, field
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TypeVar, Generic
 
@@ -35,7 +36,7 @@ class CollectorMetadata:
         return {
             "collector_name": self.collector_name,
             "collector_version": self.collector_version,
-            "collection_time": self.collection_time,
+            "collection_time": self.collection_time,  # This is already an ISO format string
             "collector_type": self.collector_type,
             "status": self.status,
             "errors": self.errors
@@ -65,8 +66,22 @@ class CollectResult(Generic[T]):
         return cls(metadata=metadata, data=data or {})
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the CollectResult to a dictionary."""
+        """Convert the CollectResult to a dictionary.
+        
+        Returns:
+            A dictionary representation of the CollectResult that is JSON-serializable.
+        """
+        # Create a deep copy of the data to avoid modifying the original
+        data = json.loads(json.dumps(self.data, default=str))
+        
         return {
-            "metadata": self.metadata.to_dict(),
-            "data": self.data
+            "metadata": {
+                "collector_name": str(self.metadata.collector_name),
+                "collector_version": str(self.metadata.collector_version),
+                "collection_time": str(self.metadata.collection_time),
+                "collector_type": str(self.metadata.collector_type),
+                "status": str(self.metadata.status),
+                "errors": [str(error) for error in self.metadata.errors]
+            },
+            "data": data
         }

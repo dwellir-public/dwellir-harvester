@@ -168,10 +168,23 @@ class CollectorBase(ABC):
             }
 
 
+# In collector_base.py, update the BlockchainCollector class
+
+# In collector_base.py, update the BlockchainCollector class
+
 class BlockchainCollector(CollectorBase):
     """Base class for blockchain collectors."""
     
     COLLECTOR_TYPE = "blockchain"
+    
+    # Define required fields that must be present in the blockchain data
+    REQUIRED_FIELDS = {
+        "blockchain_ecosystem": (str,),
+        "blockchain_network_name": (str,),
+        "chain_id": (str, int, type(None)),  # Can be string, int, or None
+        "client_name": (str,),
+        "client_version": (str, type(None))  # Can be string or None
+    }
     
     def __init__(self, rpc_url: Optional[str] = None):
         """Initialize the blockchain collector.
@@ -182,16 +195,79 @@ class BlockchainCollector(CollectorBase):
         super().__init__()
         self.rpc_url = rpc_url
     
+    def _validate_blockchain_data(self, data: Dict[str, Any]) -> None:
+        """Validate that the blockchain data contains all required fields.
+        
+        Args:
+            data: The blockchain data to validate.
+            
+        Raises:
+            CollectorError: If any required fields are missing or have incorrect types.
+        """
+        if "blockchain" not in data:
+            raise CollectorError("Missing 'blockchain' key in collector data")
+            
+        blockchain_data = data["blockchain"]
+        missing_fields = []
+        type_errors = []
+        
+        for field, expected_types in self.REQUIRED_FIELDS.items():
+            if field not in blockchain_data:
+                missing_fields.append(field)
+                continue
+                
+            value = blockchain_data[field]
+            if value is not None and not any(isinstance(value, t) for t in expected_types):
+                expected_type_names = [t.__name__ for t in expected_types if t is not type(None)]
+                if None in expected_types:
+                    expected_type_names.append("None")
+                type_errors.append(
+                    f"Field '{field}' has type {type(value).__name__}, "
+                    f"expected {' or '.join(expected_type_names)}"
+                )
+        
+        errors = []
+        if missing_fields:
+            errors.append(f"Missing required fields: {', '.join(missing_fields)}")
+        if type_errors:
+            errors.extend(type_errors)
+            
+        if errors:
+            raise CollectorError("; ".join(errors))
+    
     def collect(self) -> Dict[str, Any]:
         """Collect blockchain data.
         
         Returns:
             Dict with 'metadata' and 'data' keys. The 'data' dict must contain
             'blockchain' and 'client' keys with appropriate data.
+            
+        Note:
+            Subclasses should implement their own collection logic and call
+            super().collect() to include the metadata.
         """
-        data = super().collect()
+        # This is the base implementation that subclasses should extend
+        data = {
+            "blockchain": {
+                # These should be overridden by subclasses
+                "blockchain_ecosystem": None,
+                "blockchain_network_name": None,
+                "chain_id": None,
+                "client_name": None,
+                "client_version": None
+            }
+        }
+        
+        # Validate the collected data
+        self._validate_blockchain_data(data)
+        
+        # Convert metadata to dict before returning
+        metadata = self._get_metadata()
+        if hasattr(metadata, 'to_dict'):
+            metadata = metadata.to_dict()
+        
         return {
-            "metadata": self._get_metadata(),
+            "metadata": metadata,
             "data": data
         }
 

@@ -147,6 +147,14 @@ def run_collector(collector_name: str, schema_path: str = None, debug: bool = Fa
         try:
             # Run the collector with debug flag
             result = collector.run(debug=debug)
+            
+            # If the result is a CollectResult instance, convert it to dict
+            if hasattr(result, 'to_dict'):
+                result = result.to_dict()
+            # If the result has a 'metadata' key that's an object with to_dict
+            elif isinstance(result, dict) and hasattr(result.get('metadata'), 'to_dict'):
+                result['metadata'] = result['metadata'].to_dict()
+                
         except Exception as e:
             if debug:
                 import traceback

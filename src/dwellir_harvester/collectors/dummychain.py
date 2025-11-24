@@ -129,37 +129,42 @@ class DummychainCollector(BlockchainCollector):
         
         return None, messages
     
+
     def collect(self) -> Dict[str, Any]:
         """Collect dummychain node information.
         
         Returns:
             Dict containing the collected data.
         """
-        result = {
-        "blockchain": {
+        # Start with base blockchain data
+        result = super().collect()
+        
+        # Update with DummyChain specific data
+        result["data"]["blockchain"].update({
             "blockchain_ecosystem": "dummychain",
             "blockchain_network_name": "dummychain",
             "chain_id": None,
             "client_name": "dummychain",
-            "client_version": None,
-            "systemd_status": None
-            }
-        }
-    
+            "client_version": None
+        })
+        
         # Get client version
         version, messages = self._get_client_version()
-        result["blockchain"]["client_version"] = version
+        result["data"]["blockchain"]["client_version"] = version
         if messages:
-            result["blockchain"]["client_errors"] = messages
+            result["data"]["blockchain"]["client_errors"] = messages
         
         # Get systemd status
         try:
             systemd_status = self._get_systemd_status()
-            result["blockchain"]["systemd_status"] = systemd_status
+            result["data"]["blockchain"]["systemd_status"] = systemd_status
         except Exception as e:
-            result["blockchain"]["systemd_status"] = {
+            result["data"]["blockchain"]["systemd_status"] = {
                 "error": str(e),
                 "type": type(e).__name__
             }
+        
+        # Validate the final data structure
+        self._validate_blockchain_data(result["data"])
         
         return result
