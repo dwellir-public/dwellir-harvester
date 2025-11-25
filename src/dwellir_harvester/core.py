@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, TypedDict, Union
 
 # Import types and exceptions
-from .custom_types import CollectResult, CollectorMetadata, CollectorError, CollectorFailedError, CollectorPartialError
+from .collector_base import CollectResult, CollectorMetadata, CollectorError, CollectorFailedError, CollectorPartialError
 
 # Try to import optional dependencies
 try:
@@ -66,7 +66,7 @@ def load_collectors():
 
         import dwellir_harvester.collectors as collectors
     
-    from .collectors.collector_base import CollectorBase
+    from .collector_base import CollectorBase
     
     mapping = {}
     for _, module_name, _ in pkgutil.iter_modules(collectors.__path__):

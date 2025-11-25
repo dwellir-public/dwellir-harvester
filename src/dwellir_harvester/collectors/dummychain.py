@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional, List, Tuple
 import subprocess
 from ..systemd_utils import get_systemd_status
-from .collector_base import BlockchainCollector, CollectResult
+from ..collector_base import BlockchainCollector, CollectResult
 import logging
 logger = logging.getLogger(__name__)
 # Add NullHandler to prevent "No handlers could be found" warnings
@@ -95,27 +95,33 @@ class DummychainCollector(BlockchainCollector):
                 "type": type(e).__name__
             }
         
+        blockchain_data = {
+            "blockchain_ecosystem": "dummychain",
+            "blockchain_network_name": "dummychain",
+            "chain_id": "dummychain-1"  # Provide a default chain_id
+        }
+
+        workload_data = {
+            "client_name": "dummychain-node",
+            "client_version": version or "1.0.0",  # Fallback to default if version is None
+            "service_data": systemd_status,
+        }
+        if messages:
+            workload_data["client_errors"] = messages
+
         # Create the result with all data
         result = CollectResult.create(
             collector_name=self.NAME,
             collector_version=self.VERSION,
             data={
-                "blockchain": {
-                    "blockchain_ecosystem": "dummychain",
-                    "blockchain_network_name": "dummychain",
-                    "chain_id": "dummychain-1",  # Provide a default chain_id
-                    "client_name": "dummychain-node",
-                    "client_version": version or "1.0.0",  # Fallback to default if version is None
-                    "systemd_status": systemd_status,
-                    **({"client_errors": messages} if messages else {})
-                }
+                "blockchain": blockchain_data,
+                "workload": workload_data
             }
         )
         
         # Validate the final data structure
-        logger.debug(f"Validating blockchain data...")
+        logger.debug(f"Validating blockchain data on collector {self.NAME}...")
         self._validate_blockchain_data(result.data)
-        logger.debug(f"Validated blockchain data")
         
 
         return result

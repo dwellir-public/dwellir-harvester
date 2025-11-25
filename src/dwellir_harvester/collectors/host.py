@@ -7,7 +7,7 @@ import sys
 import time
 import psutil
 
-from .collector_base import GenericCollector
+from ..collector_base import GenericCollector
 
 def get_system_uptime() -> float:
     """Get system uptime in seconds from /proc/uptime."""

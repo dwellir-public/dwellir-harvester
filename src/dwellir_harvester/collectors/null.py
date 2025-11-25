@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Dict, Any
-from .collector_base import GenericCollector
+from ..collector_base import GenericCollector
 
 class NullCollector(GenericCollector):
     """

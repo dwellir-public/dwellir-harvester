@@ -11,7 +11,7 @@ from ..rpc_substrate import (
     rpc_get_system_chain,
     rpc_get_genesis_hash
 )
-from .collector_base import CollectorBase
+from ..collector_base import CollectorBase
 
 DEFAULT_RPC_URL = "http://127.0.0.1:9944"
 
