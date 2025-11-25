@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, Generic
 
-from ..types import CollectResult, CollectorMetadata, CollectorError, CollectorFailedError, CollectorPartialError
+from ..custom_types import CollectResult, CollectorMetadata, CollectorError, CollectorFailedError, CollectorPartialError
 
 T = TypeVar('T')
 

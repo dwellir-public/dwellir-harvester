@@ -2,6 +2,11 @@ from typing import Dict, Any, Optional, List, Tuple
 import subprocess
 from ..systemd_utils import get_last_journal_message, get_essential_service_properties
 from .collector_base import BlockchainCollector, CollectResult
+import logging
+logger = logging.getLogger(__name__)
+# Add NullHandler to prevent "No handlers could be found" warnings
+logger.addHandler(logging.NullHandler())
+
 
 class DummychainCollector(BlockchainCollector):
     """Collector for Dummychain nodes."""
@@ -42,21 +47,14 @@ class DummychainCollector(BlockchainCollector):
         service_name = "snap.dummychain.daemon.service"
         result = {}
         
-        # Get the latest journal entry
+        # Get the latest systemd+journal entry
         try:
             journal_entry = get_last_journal_message(service_name)
             if not journal_entry:
                 result["journal_warning"] = "No journal entries found"
             else:
-                result.update({
-                    "journal": {
-                        "service": journal_entry.get("service", ""),
-                        "message": journal_entry.get("message", ""),
-                        "timestamp": journal_entry.get("timestamp", ""),
-                        "cmdline": journal_entry.get("cmdline", "")
-                    },
-                    "pid": journal_entry.get("pid", "")
-                })
+                result.update(journal_entry)
+
         except Exception as e:
             result["journal_error"] = {
                 "error": str(e),
@@ -66,11 +64,14 @@ class DummychainCollector(BlockchainCollector):
         
         # Get systemd service properties
         try:
+
             service_props = get_essential_service_properties(service_name)
+            
             if not service_props:
                 result["service_warning"] = "No service properties found"
             else:
-                result["service"] = service_props.get("service", {})
+                # result["service"] = service_props.get("service", {})
+                result["service"] = service_props
         except Exception as e:
             result["service_error"] = {
                 "error": str(e),
@@ -126,10 +127,12 @@ class DummychainCollector(BlockchainCollector):
         """
         # First collect all the data we need
         version, messages = self._get_client_version()
-        
+        logger.debug(f"Fetched client version: {version}, err: {messages}")
+
         # Get systemd status
         try:
             systemd_status = self._get_systemd_status()
+            logger.debug(f"Fetched systemd: {systemd_status}")
         except Exception as e:
             systemd_status = {
                 "error": str(e),
@@ -154,6 +157,9 @@ class DummychainCollector(BlockchainCollector):
         )
         
         # Validate the final data structure
+        logger.debug(f"Validating blockchain data...")
         self._validate_blockchain_data(result.data)
+        logger.debug(f"Validated blockchain data")
         
+
         return result

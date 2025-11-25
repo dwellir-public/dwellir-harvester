@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -39,10 +40,14 @@ def setup_logging(debug=False):
     
     return log
 
-try:
+# Add the parent directory to the Python path if running directly
+if __name__ == "__main__" and __package__ is None:
+    import os
+    import sys
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from dwellir_harvester.core import collect_all, bundled_schema_path, load_collectors, run_collector
+else:
     from .core import collect_all, bundled_schema_path, load_collectors, run_collector
-except ImportError:
-    from core import collect_all, bundled_schema_path, load_collectors, run_collector
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command line argument parser."""
@@ -91,12 +96,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(args: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
+    # Allow a single string of arguments (e.g., when VS Code passes one promptString)
+    if args is None and len(sys.argv) == 2 and isinstance(sys.argv[1], str):
+        args = shlex.split(sys.argv[1])
+    elif isinstance(args, list) and len(args) == 1 and isinstance(args[0], str):
+        args = shlex.split(args[0])
+
     parser = build_parser()
     parsed_args = parser.parse_args(args)
-    
+
     # Configure logging
     log = setup_logging(debug=parsed_args.debug)
-    
+    log.debug("CLI main() started")
     if parsed_args.cmd == "collect":
         start_time = datetime.now(timezone.utc)
         
@@ -172,3 +183,7 @@ def main(args: Optional[List[str]] = None) -> int:
             return 1
     
     return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

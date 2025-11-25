@@ -4,7 +4,7 @@ import subprocess
 import shutil
 from typing import Dict, Optional, List
 
-from ..types import CollectResult, CollectorPartialError, CollectorFailedError
+from ..custom_types import CollectResult, CollectorPartialError, CollectorFailedError
 from ..rpc_evm import (
     rpc_get_client_version,
     rpc_get_chain_id,

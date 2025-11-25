@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, TypedDict, Union
 
 # Import types and exceptions
-from .types import CollectResult, CollectorMetadata, CollectorError, CollectorFailedError, CollectorPartialError
+from .custom_types import CollectResult, CollectorMetadata, CollectorError, CollectorFailedError, CollectorPartialError
 
 # Try to import optional dependencies
 try:
