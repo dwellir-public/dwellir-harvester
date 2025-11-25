@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dwellir-harvester"
-version = "0.1.10"
+version = "0.1.12"
 description = "Collector framework to collect data from running Dwellir server nodes."
 authors = [{ name = "Dwellir OPS", email = "ops@dwellir.com" }]
 readme = "README.md"
