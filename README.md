@@ -44,7 +44,7 @@ sudo pip install .
 
 ```bash
 # Run with the safe default "host" collector (basic system information)
-dwellir-harvester collect --collector host --output out.json
+dwellir-harvester collect host null --output out.json
 ```
 
 ### Run the Daemon
@@ -67,7 +67,7 @@ By default, the daemon:
 ### Command Line Arguments
 
 ```
-usage: dwellir-harvester-daemon [-h] [--collectors COLLECTORS [COLLECTORS ...]] [--host HOST] [--port PORT]
+usage: dwellir-harvester-daemon [-h] [--collectors COLLECTORS [COLLECTORS ...]] [--host HOST] [--port PORT] [--debug]
                                [--interval INTERVAL] [--schema SCHEMA] [--no-validate] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
 
 Dwellir Harvester Daemon
@@ -81,6 +81,7 @@ options:
   --interval INTERVAL   Collection interval in seconds (default: 300)
   --schema SCHEMA       Path to JSON schema file (defaults to bundled schema)
   --no-validate         Disable schema validation
+  --debug               Enable debug logging
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         Logging level (default: INFO)
 ```
@@ -93,6 +94,7 @@ options:
 - `INTERVAL`: Collection interval in seconds (default: `300`)
 - `COLLECTORS`: Space-separated list of collectors to run (default: `host`)
 - `VALIDATE`: Enable/disable schema validation (default: `true`)
+- `DEBUG`: Enable debug logging (default: `false`)
 
 ## Running as a Systemd Service
 
@@ -125,8 +127,8 @@ options:
 ## Available Collectors
 
 - `host` - Collects basic system information (default)
-- `reth` - Collects data from a Reth node
-- `substrate` - Collects data from a Substrate node
+- `null` - A dummy collector
+- `dummychain` - Collects data from a dummychain (snap install dummychain --edge)
 
 ## API Endpoints
 
@@ -161,7 +163,7 @@ options:
 ### Adding a New Collector
 
 1. Create a new Python file in `src/dwellir_harvester/collectors/`
-2. Implement a class that inherits from `BaseCollector`
+2. Implement a class using the Dummycollector `BlockchainCollector` or Nullcollector `GenericCollector`
 3. Add it to `__all__` in `collectors/__init__.py`
 
 ## License
@@ -178,8 +180,6 @@ The daemon exposes a small HTTP API on `0.0.0.0:<service.port>` (default `:18080
 
 - `GET /healthz` → plain text `"ok"` if the daemon is serving.
 - `GET /metadata` → the latest JSON document (200) or `{"error":"metadata not found"}` (404).
-- `GET /env` → JSON with selected environment details (debugging aid).
-- `POST /run` → triggers a collection run immediately; returns JSON status (200 on success, 500 on failure).
 
 ### `curl` examples
 
@@ -190,11 +190,6 @@ curl -s http://127.0.0.1:18080/healthz
 # Current metadata (pretty-print)
 curl -s http://127.0.0.1:18080/metadata | jq .
 
-# Trigger an on-demand collection
-curl -s -X POST http://127.0.0.1:18080/run | jq .
-
-# Inspect runtime env (debug)
-curl -s http://127.0.0.1:18080/env | jq .
 ```
 
 > If you changed the port via `service.port`, replace `18080` in the examples.
