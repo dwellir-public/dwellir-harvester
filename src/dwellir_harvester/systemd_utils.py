@@ -451,3 +451,46 @@ def get_journal_messages(service_name: str, num_entries: int = 10) -> List[Dict[
         })
     
     return messages
+
+def get_systemd_status(service_name: str) -> Dict[str, Any]:
+    """Get systemd status for the dummychain service.
+    Merges in some data from the journal as well.
+    
+    Returns:
+        Dict containing service status, journal messages, and systemd properties.
+    """
+    result = {}
+    
+    # Get the latest systemd+journal entry
+    try:
+        journal_entry = get_last_journal_message(service_name)
+        if not journal_entry:
+            result["journal_warning"] = "No journal entries found"
+        else:
+            result.update(journal_entry)
+
+    except Exception as e:
+        result["journal_error"] = {
+            "error": str(e),
+            "type": type(e).__name__,
+            "args": getattr(e, 'args', [])
+        }
+    
+    # Get systemd service properties
+    try:
+
+        service_props = get_essential_service_properties(service_name)
+
+        if not service_props:
+            result["service_warning"] = "No service properties found"
+        else:
+            # result["service"] = service_props.get("service", {})
+            result["service"] = service_props
+    except Exception as e:
+        result["service_error"] = {
+            "error": str(e),
+            "type": type(e).__name__,
+            "args": getattr(e, 'args', [])
+        }
+    
+    return result

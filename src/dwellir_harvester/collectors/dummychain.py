@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional, List, Tuple
 import subprocess
-from ..systemd_utils import get_last_journal_message, get_essential_service_properties
+from ..systemd_utils import get_last_journal_message, get_essential_service_properties, get_systemd_status
 from .collector_base import BlockchainCollector, CollectResult
 import logging
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ class DummychainCollector(BlockchainCollector):
         """
         super().__init__(rpc_url=rpc_url)
         self.rpc_url = rpc_url or "http://localhost:9933"
+        self.service_name = "snap.dummychain.daemon.service"
     
     @classmethod
     def create(cls, **kwargs) -> 'DummychainCollector':
@@ -35,51 +36,6 @@ class DummychainCollector(BlockchainCollector):
         """
         return cls(**kwargs)
 
-    
-    # In dummychain.py, update the _get_systemd_status method:
-    def _get_systemd_status(self) -> Dict[str, Any]:
-        """Get systemd status for the dummychain service.
-        Merges in some data from the journal as well.
-        
-        Returns:
-            Dict containing service status, journal messages, and systemd properties.
-        """
-        service_name = "snap.dummychain.daemon.service"
-        result = {}
-        
-        # Get the latest systemd+journal entry
-        try:
-            journal_entry = get_last_journal_message(service_name)
-            if not journal_entry:
-                result["journal_warning"] = "No journal entries found"
-            else:
-                result.update(journal_entry)
-
-        except Exception as e:
-            result["journal_error"] = {
-                "error": str(e),
-                "type": type(e).__name__,
-                "args": getattr(e, 'args', [])
-            }
-        
-        # Get systemd service properties
-        try:
-
-            service_props = get_essential_service_properties(service_name)
-            
-            if not service_props:
-                result["service_warning"] = "No service properties found"
-            else:
-                # result["service"] = service_props.get("service", {})
-                result["service"] = service_props
-        except Exception as e:
-            result["service_error"] = {
-                "error": str(e),
-                "type": type(e).__name__,
-                "args": getattr(e, 'args', [])
-            }
-        
-        return result
 
     # Update the _get_client_version method:
     def _get_client_version(self) -> Tuple[Optional[str], List[str]]:
@@ -131,7 +87,7 @@ class DummychainCollector(BlockchainCollector):
 
         # Get systemd status
         try:
-            systemd_status = self._get_systemd_status()
+            systemd_status = systemd_utils._get_systemd_status(self.service_name)
             logger.debug(f"Fetched systemd: {systemd_status}")
         except Exception as e:
             systemd_status = {
