@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dwellir-harvester"
-version = "0.0.2"
+version = "0.0.3"
 description = "Collector framework to collect data from running Dwellir server nodes."
 authors = [{ name = "Dwellir OPS", email = "ops@dwellir.com" }]
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "dwellir-harvester-lib @ file:///home/erik/dwellir-harvester-lib",
+    "dwellir-harvester-lib>=0.0.1",
     "importlib-resources>=5.0.0; python_version < '3.9'"
 ]
 license = { text = "MIT" }
@@ -41,6 +41,8 @@ dwellir-harvester-daemon = "dwellir_harvester_app.daemon:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+license-files = []  # disable auto license-file metadata emission
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["dwellir_harvester_app", "dwellir_harvester_app.*"]

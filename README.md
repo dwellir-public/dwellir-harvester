@@ -200,7 +200,7 @@ options:
 
 2. Run tests:
    ```bash
-   pytest
+   python -m pytest
    ```
 
 3. Run linters:
@@ -235,7 +235,9 @@ If `setuptools` is missing in the venv, recreate it with `--system-site-packages
 
 ### Adding a New Collector
 
-Collectors now live in the library repo. Add your collector to `../dwellir-harvester-lib/src/dwellir_harvester/collectors/`, implement it with `BlockchainCollector` or `GenericCollector`, and export it via `__all__` in that package (or ship it as a plugin via entry points/`--collector-path`).
+Collectors now live in the dwellir-harvester-lib repo. 
+
+Add your collector to `../dwellir-harvester-lib/src/dwellir_harvester/collectors/`, implement it with `BlockchainCollector` or `GenericCollector`, and export it via `__all__` in that package (or ship it as a plugin via entry points/`--collector-path`).
 
 ## License
 
