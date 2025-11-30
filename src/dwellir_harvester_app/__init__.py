@@ -2,7 +2,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("dwellir-harvester")
-except PackageNotFoundError:  # fallback for editable installs
-    from .__version__ import __version__  # type: ignore
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 __all__ = ["cli", "daemon"]

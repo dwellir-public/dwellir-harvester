@@ -16,11 +16,6 @@ This document outlines the steps to create a new release of the Dwellir Harveste
 
 1. **Update the version number**
    - Edit `pyproject.toml` and update the `version` field (e.g., `0.1.10`)
-   - Run the version update script to sync the version:
-     ```bash
-     python scripts/update_version.py
-     ```
-   - Verify the version was updated in `src/dwellir_harvester_app/__version__.py`
 
 2. **Update the changelog**
    - Update `CHANGELOG.md` with the new version and changes
@@ -29,7 +24,7 @@ This document outlines the steps to create a new release of the Dwellir Harveste
 
 3. **Commit the changes**
    ```bash
-   git add pyproject.toml src/dwellir_harvester_app/__version__.py CHANGELOG.md
+   git add pyproject.toml CHANGELOG.md
    git commit -m "Bump version to X.Y.Z"
    git push origin main  # or your development branch
    ```
@@ -77,13 +72,9 @@ This document outlines the steps to create a new release of the Dwellir Harveste
 ## Post-Release
 
 1. Update the version to the next development version in `pyproject.toml` (e.g., `0.1.11-dev`)
-2. Run the version update script again:
+2. Commit the changes:
    ```bash
-   python scripts/update_version.py
-   ```
-3. Commit the changes:
-   ```bash
-   git add pyproject.toml src/dwellir_harvester_app/__version__.py
+   git add pyproject.toml
    git commit -m "Bump version to X.Y.Z-dev"
    git push origin main  # or your development branch
    ```

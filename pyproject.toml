@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dwellir-harvester"
-version = "0.0.3"
+version = "0.0.4"
 description = "Collector framework to collect data from running Dwellir server nodes."
 authors = [{ name = "Dwellir OPS", email = "ops@dwellir.com" }]
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "dwellir-harvester-lib>=0.0.1",
+    "dwellir-harvester-lib>=0.0.2",
     "importlib-resources>=5.0.0; python_version < '3.9'"
 ]
 license = { text = "MIT" }
