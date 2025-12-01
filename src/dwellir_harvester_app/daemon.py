@@ -61,6 +61,7 @@ class CollectorDaemon:
         self.output_file = config.get('output_file', '/var/lib/dwellir-harvester/harvested-data.json')
         self.auth_tokens = self._load_auth_tokens(config)
         self.collector_paths = config.get('collector_paths', [])
+        self.collector_kwargs = config.get('collector_kwargs', {})
         
         # Ensure output directory exists
         if self.output_file:
@@ -191,7 +192,8 @@ class CollectorDaemon:
                 schema_path=schema_path,
                 validate=self.config.get('validate', True),
                 debug=debug,
-                plugin_paths=self.collector_paths
+                plugin_paths=self.collector_paths,
+                collector_kwargs=self.collector_kwargs,
             )
 
             # Update the latest results
@@ -360,6 +362,29 @@ class CollectorDaemon:
 
         return RequestHandler
 
+def _load_collector_args(raw: Optional[str], file_path: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """Parse collector args from JSON string/file/env."""
+    data = None
+    if file_path:
+        try:
+            data = Path(file_path).read_text()
+        except Exception:
+            data = None
+    if raw:
+        data = raw
+    if data is None:
+        data = os.environ.get("HARVESTER_COLLECTOR_ARGS")
+    if not data:
+        return {}
+    try:
+        parsed = json.loads(data)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        return {}
+    return {}
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description='Dwellir Harvester Daemon')
@@ -392,12 +417,25 @@ def parse_args():
     parser.add_argument('--log-level', default='INFO',
                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                       help='Logging level (default: INFO, ignored if --debug is used)')
+    parser.add_argument(
+        '--collector-args',
+        dest='collector_args',
+        default=None,
+        help='JSON mapping of collector name to kwargs for CollectorCls.create(**kwargs). Also honors HARVESTER_COLLECTOR_ARGS.',
+    )
+    parser.add_argument(
+        '--collector-args-file',
+        dest='collector_args_file',
+        default=None,
+        help='Path to JSON file containing collector kwargs mapping.',
+    )
     
     return parser.parse_args()
 
 def main():
     """Main entry point."""
     args = parse_args()
+    collector_kwargs = _load_collector_args(args.collector_args, args.collector_args_file)
     
     # Configure logging
     log_level = logging.DEBUG if args.debug else getattr(logging, args.log_level)
@@ -424,6 +462,7 @@ def main():
         'schema_path': args.schema,  # Pass the schema path to the daemon
         'auth_tokens': args.auth_tokens,
         'auth_token_file': args.auth_token_file,
+        'collector_kwargs': collector_kwargs,
     })
     
     try:
