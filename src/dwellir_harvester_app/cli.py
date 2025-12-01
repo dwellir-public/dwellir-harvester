@@ -6,7 +6,7 @@ import shlex
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from dwellir_harvester.core import bundled_schema_path, collect_all, load_collectors, run_collector
 
@@ -91,8 +91,43 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Additional paths to search for collectors (can be repeated). Also honors HARVESTER_COLLECTOR_PATHS."
     )
+    collect_parser.add_argument(
+        "--collector-args",
+        dest="collector_args",
+        default=None,
+        help="JSON mapping of collector name to kwargs for CollectorCls.create(**kwargs). Also honors HARVESTER_COLLECTOR_ARGS.",
+    )
+    collect_parser.add_argument(
+        "--collector-args-file",
+        dest="collector_args_file",
+        default=None,
+        help="Path to JSON file containing collector kwargs mapping.",
+    )
     
     return parser
+
+
+def _load_collector_args(parsed_args) -> Dict[str, Dict[str, Any]]:
+    """Load collector kwargs from CLI args or env."""
+    raw = None
+    if parsed_args.collector_args_file:
+        try:
+            raw = Path(parsed_args.collector_args_file).read_text()
+        except Exception:
+            raw = None
+    if parsed_args.collector_args:
+        raw = parsed_args.collector_args
+    if raw is None:
+        raw = os.environ.get("HARVESTER_COLLECTOR_ARGS")
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return {}
+    return {}
 
 def main(args: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
@@ -145,6 +180,7 @@ def main(args: Optional[List[str]] = None) -> int:
             
             log.debug(f"Running {len(collectors)} collectors: {[c.NAME for c in collectors]}")
             log.debug(f"Validation is {'enabled' if parsed_args.validate else 'disabled'}")
+            collector_args = _load_collector_args(parsed_args)
             
             # Run the collectors
             result = collect_all(
@@ -152,7 +188,8 @@ def main(args: Optional[List[str]] = None) -> int:
                 schema_path=schema_path,
                 validate=getattr(parsed_args, 'validate', True),  # Use getattr for backward compatibility
                 debug=parsed_args.debug,
-                plugin_paths=parsed_args.collector_paths
+                plugin_paths=parsed_args.collector_paths,
+                collector_kwargs=collector_args,
             )
             
             # Output the result
